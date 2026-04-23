@@ -4,8 +4,39 @@
   "stats": { "body": 0, "tech": 1, "mind": 2 },
   "hp_max": 7,
   "traits": [
-    { "name": "古文書読解", "desc": "古代語・魔術記号の心判定で +1 (GM 判断)" },
-    { "name": "慎重", "desc": "危険な仕掛けを見落としにくい" }
+    {
+      "id": "ancient-script",
+      "name": "古文書読解",
+      "desc": "古代語や魔術記号を読む心判定で +1",
+      "effects": [
+        { "stat": "mind", "amount": 1, "tags": ["ancient-text", "ritual", "seal"], "trigger": "roll" }
+      ]
+    },
+    {
+      "id": "careful",
+      "name": "慎重",
+      "desc": "危険な仕掛けを見落としにくい",
+      "effects": []
+    }
   ],
-  "inventory": ["羽根ペン", "羊皮紙", "小型ナイフ"]
+  "inventory": [
+    {
+      "id": "quill",
+      "name": "羽根ペン",
+      "desc": "記録用の羽根ペン",
+      "effects": []
+    },
+    {
+      "id": "parchment",
+      "name": "羊皮紙",
+      "desc": "記録や写本に使う羊皮紙",
+      "effects": []
+    },
+    {
+      "id": "small-knife",
+      "name": "小型ナイフ",
+      "desc": "護身と細工用の小刃",
+      "effects": []
+    }
+  ]
 }

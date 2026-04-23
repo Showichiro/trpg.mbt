@@ -11,21 +11,32 @@ repo_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cp "$repo_dir"/scenarios/*.json "$TRPG_HOME/scenarios/"
 
 trpg --describe >/tmp/trpg-describe.json
+trpg --help >/tmp/trpg-help.txt
+trpg scenario validate forgotten_library >/tmp/trpg-scenario-validate.json
 trpg session init forgotten_library >/tmp/trpg-session.json
 if trpg session init forgotten_library >/tmp/trpg-conflict.json 2>/tmp/trpg-conflict.err; then
   echo "smoke: expected session init conflict" >&2
   exit 1
 fi
-trpg pc add alice --from "$TRPG_HOME/scenarios/sample_pc_alice.json" >/tmp/trpg-pc-add.json
-trpg pc show alice >/tmp/trpg-pc-show.json
-trpg roll 2d6+3 --target 10 --as alice --context "扉の解錠" >/tmp/trpg-roll.json
-trpg hp alice -3 >/tmp/trpg-hp.json
-trpg status alice add 毒 --note "ターン終了時 1 ダメ" >/tmp/trpg-status.json
+trpg pc templates list >/tmp/trpg-pc-templates.json
+trpg pc add alice --template alice >/tmp/trpg-pc-add.json
+trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show.json
+trpg roll alice --stat body --scene-default --context "入口の扉を押し開ける" >/tmp/trpg-roll-open.json
+trpg status alice add 祝福 --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry --uses 1 --on-trigger consume >/tmp/trpg-status.json
+trpg roll alice --stat tech --tags forced-entry --target 10 --context "扉の解錠" >/tmp/trpg-roll.json
+trpg hp alice -3 --context "扉の反動" >/tmp/trpg-hp.json
+trpg item give alice "銀の鍵" --desc "封印石棺の鍵" >/tmp/trpg-item-give.json
 trpg log add "扉を開けた" --as alice >/tmp/trpg-log-add.json
-trpg log tail -n 5 >/tmp/trpg-log-tail.json
-trpg scene set librarian >/tmp/trpg-scene.json
-trpg scene flag met_librarian true >/tmp/trpg-flag.json
+trpg log show --kind roll -n 5 >/tmp/trpg-log-show.json
+trpg roll history --as alice -n 5 >/tmp/trpg-roll-history.json
+trpg scene show >/tmp/trpg-scene-show.json
+trpg scene next >/tmp/trpg-scene.json
+trpg contest alice "司書の亡霊" --a-stat tech --b-stat mind --a-tags ancient-text --b-tags ancient-text --context "貸出記録を読み解く" >/tmp/trpg-contest.json
 trpg prompt gm >/tmp/trpg-prompt-gm.json
 trpg prompt player alice >/tmp/trpg-prompt-player.json
+trpg scene next >/tmp/trpg-scene-next.json
+trpg scene flag sealed true >/tmp/trpg-flag.json
+trpg session report >/tmp/trpg-session-report.json
+trpg session end >/tmp/trpg-session-end.json
 
 echo "smoke ok" >&2

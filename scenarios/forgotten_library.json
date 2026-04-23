@@ -12,18 +12,54 @@
     "sample_pcs": ["alice", "orion"]
   },
   "opening_scene": "entrance",
+  "goals": [
+    {
+      "id": "recover-silver-key",
+      "kind": "inventory_contains",
+      "actor": "any_pc",
+      "item_id": "銀の鍵",
+      "outcome": "success"
+    },
+    {
+      "id": "seal-stabilized",
+      "kind": "scene_flag",
+      "scene": "seal",
+      "flag": "sealed",
+      "equals": "true",
+      "outcome": "success"
+    }
+  ],
   "scenes": {
     "entrance": {
       "description": "苔むした入口。床には古い魔法陣の残滓があり、重い扉の奥から湿った紙の匂いが漂う。",
-      "difficulty_hint": "体 9"
+      "difficulty": {
+        "stat": "body",
+        "target": 9,
+        "tags": ["forced-entry", "ruins"]
+      },
+      "transitions": [
+        { "to": "librarian", "label": "蔵書の間へ進む", "requires": [] }
+      ]
     },
     "librarian": {
       "description": "蔵書の間には司書の亡霊が佇む。彼女は失われた貸出記録を守り、来訪者の意図を見定めようとする。",
-      "difficulty_hint": "心 9"
+      "difficulty": {
+        "stat": "mind",
+        "target": 9,
+        "tags": ["parley", "ancient-text"]
+      },
+      "transitions": [
+        { "to": "seal", "label": "地下書庫へ向かう", "requires": [] }
+      ]
     },
     "seal": {
       "description": "地下書庫の石棺には複雑な魔法紋様が刻まれている。鍵は封印の中心で淡く脈打っている。",
-      "difficulty_hint": "技 11"
+      "difficulty": {
+        "stat": "tech",
+        "target": 11,
+        "tags": ["ritual", "seal"]
+      },
+      "transitions": []
     }
   },
   "npcs": [
@@ -35,8 +71,24 @@
         "class": "亡霊",
         "stats": { "body": 0, "tech": 1, "mind": 2 },
         "hp_max": 8,
-        "traits": [],
-        "inventory": []
+        "traits": [
+          {
+            "id": "ancient-catalog",
+            "name": "古い目録知識",
+            "desc": "図書館の歴史や貸出記録を辿る心判定で +1",
+            "effects": [
+              { "stat": "mind", "amount": 1, "tags": ["ancient-text", "parley"], "trigger": "roll" }
+            ]
+          }
+        ],
+        "inventory": [
+          {
+            "id": "銀の鍵",
+            "name": "銀の鍵",
+            "desc": "封印石棺の中心にはまる古い鍵",
+            "effects": []
+          }
+        ]
       }
     }
   ]

@@ -4,15 +4,17 @@ fn parse_global_flags(argv : Array[String]) -> GlobalArgs {
   let mut human = false
   let mut quiet = false
   let mut describe = false
+  let mut help = false
   for arg in argv {
     match arg {
       "--human" => human = true
       "--quiet" => quiet = true
       "--describe" => describe = true
+      "--help" => help = true
       _ => args.push(arg)
     }
   }
-  { args, human, quiet, describe }
+  { args, human, quiet, describe, help }
 }
 
 ///|
@@ -42,16 +44,36 @@ fn flag_present(args : Array[String], flag : String) -> Bool {
 ///|
 fn option_takes_value(arg : String) -> Bool {
   arg == "--from" ||
+  arg == "--template" ||
   arg == "--target" ||
   arg == "--as" ||
+  arg == "--stat" ||
+  arg == "--bonus" ||
+  arg == "--tags" ||
+  arg == "--desc" ||
+  arg == "--effect" ||
   arg == "--context" ||
   arg == "--by" ||
   arg == "--note" ||
+  arg == "--outcome" ||
   arg == "--for-roll" ||
   arg == "--modifier" ||
   arg == "--uses" ||
   arg == "--duration" ||
   arg == "--on-trigger" ||
+  arg == "--a-stat" ||
+  arg == "--b-stat" ||
+  arg == "--a-tags" ||
+  arg == "--b-tags" ||
+  arg == "--a-bonus" ||
+  arg == "--b-bonus" ||
+  arg == "--atk" ||
+  arg == "--def" ||
+  arg == "--damage" ||
+  arg == "--atk-tags" ||
+  arg == "--def-tags" ||
+  arg == "--atk-bonus" ||
+  arg == "--def-bonus" ||
   arg == "-n"
 }
 
@@ -63,7 +85,9 @@ fn positional_args(args : Array[String]) -> Array[String] {
     let arg = args[i]
     if option_takes_value(arg) {
       i += 2
-    } else if arg == "--if-not-exists" {
+    } else if arg == "--if-not-exists" ||
+      arg == "--scene-default" ||
+      arg == "--no-consume" {
       i += 1
     } else {
       out.push(arg)

@@ -4,8 +4,39 @@
   "stats": { "body": 1, "tech": 2, "mind": 0 },
   "hp_max": 8,
   "traits": [
-    { "name": "錠開け", "desc": "解錠・罠解除の技判定で +1 (GM 判断)" },
-    { "name": "夜目", "desc": "暗所での不利を受けにくい" }
+    {
+      "id": "lockpick",
+      "name": "錠開け",
+      "desc": "解錠・罠解除の技判定で +1",
+      "effects": [
+        { "stat": "tech", "amount": 1, "tags": ["forced-entry", "lockpick", "trap"], "trigger": "roll" }
+      ]
+    },
+    {
+      "id": "night-vision",
+      "name": "夜目",
+      "desc": "暗所の観察や索敵で不利を受けにくい",
+      "effects": []
+    }
   ],
-  "inventory": ["短剣", "ランタン", "縄"]
+  "inventory": [
+    {
+      "id": "dagger",
+      "name": "短剣",
+      "desc": "護身用の短剣",
+      "effects": []
+    },
+    {
+      "id": "lantern",
+      "name": "ランタン",
+      "desc": "暗所を照らす油灯",
+      "effects": []
+    },
+    {
+      "id": "rope",
+      "name": "縄",
+      "desc": "足場確保や回収に使う丈夫な縄",
+      "effects": []
+    }
+  ]
 }

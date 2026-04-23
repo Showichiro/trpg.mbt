@@ -24,13 +24,14 @@ fn dispatch_session(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "init" => session_init(global)
     "show" => session_show(global)
     "end" => session_end(global)
+    "report" => session_report(global)
     "scene" => session_scene(global)
     "note" => session_note(global)
     _ =>
       fail(
         TrpgError::Usage(
           "unknown session verb: \{verb}",
-          Some("supported verbs: init, show, end, scene, note"),
+          Some("supported verbs: init, show, end, report, scene, note"),
         ),
       )
   }
@@ -61,11 +62,13 @@ fn session_init(global : GlobalArgs) -> RunResult raise TrpgFailure {
       }
     None => {
       let scenario = load_scenario_json(scenario_id)
+      validate_scenario_json(scenario, scenario_id)
       let opening = json_string_field(scenario, "opening_scene", "entrance")
+      let started = now_ms()
       execute_bound(
         db,
-        "INSERT INTO sessions (scenario_id, started_at_ms, current_scene, is_active) VALUES (?, ?, ?, 1)",
-        [text_value(scenario_id), int64_value(now_ms()), text_value(opening)],
+        "INSERT INTO sessions (scenario_id, started_at_ms, current_scene, is_active, ended_at_ms, outcome) VALUES (?, ?, ?, 1, NULL, NULL)",
+        [text_value(scenario_id), int64_value(started), text_value(opening)],
       )
       let session_id = db.last_insert_rowid().to_int()
       insert_scenario_scenes(db, session_id, scenario)
@@ -73,8 +76,11 @@ fn session_init(global : GlobalArgs) -> RunResult raise TrpgFailure {
       let session = SessionRow::{
         id: session_id,
         scenario_id,
-        started_at_ms: now_ms(),
+        started_at_ms: started,
         current_scene: opening,
+        is_active: true,
+        ended_at_ms: None,
+        outcome: None,
       }
       json_success(
         session_json(session),
@@ -90,11 +96,13 @@ fn session_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
+  let scenario = load_scenario_json(session.scenario_id)
   let pcs = list_characters(db, session.id).map(row_to_character_json)
   let json = Json::object({
     "command": "session.show",
     "session": session_json(session),
     "characters": Json::array(pcs),
+    "scene": require_scenario_scene(scenario, session.current_scene),
   })
   json_success(
     json,
@@ -108,16 +116,155 @@ fn session_end(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
-  execute_bound(db, "UPDATE sessions SET is_active = 0 WHERE id = ?", [
-    int_value(session.id),
-  ])
+  let scenario = load_scenario_json(session.scenario_id)
+  let goals = goal_statuses(db, session, scenario)
+  let outcome = match option_value(global.args, "--outcome") {
+    Some(value) => value
+    None => derive_session_outcome(goals)
+  }
+  let ended = now_ms()
+  execute_bound(
+    db,
+    "UPDATE sessions SET is_active = 0, ended_at_ms = ?, outcome = ? WHERE id = ?",
+    [int64_value(ended), text_value(outcome), int_value(session.id)],
+  )
+  let event_data = Json::object({
+    "outcome": Json::string(outcome),
+    "goals": Json::array(
+      goals.map(goal => {
+        Json::object({
+          "id": Json::string(goal.id),
+          "outcome": Json::string(goal.outcome),
+          "satisfied": Json::boolean(goal.satisfied),
+          "summary": Json::string(goal.summary),
+        })
+      }),
+    ),
+  })
+  let event_id = append_event(
+    db,
+    session.id,
+    "session",
+    Some("gm"),
+    None,
+    "session end: \{outcome}",
+    event_data.stringify(),
+  )
   let json = Json::object({
     "command": "session.end",
     "session_id": j_int(session.id),
     "scenario_id": Json::string(session.scenario_id),
+    "outcome": Json::string(outcome),
+    "event_id": j_int(event_id),
+    "goals": Json::array(
+      goals.map(goal => {
+        Json::object({
+          "id": Json::string(goal.id),
+          "outcome": Json::string(goal.outcome),
+          "satisfied": Json::boolean(goal.satisfied),
+          "summary": Json::string(goal.summary),
+        })
+      }),
+    ),
     "active": false,
   })
-  json_success(json, "セッション終了: \{session.scenario_id}", global)
+  json_success(
+    json,
+    "セッション終了: \{session.scenario_id} / outcome=\{outcome}",
+    global,
+  )
+}
+
+///|
+fn session_report(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let db = open_db()
+  defer db.close()
+  let session = match active_session(db) {
+    Some(value) => value
+    None =>
+      match latest_session(db) {
+        Some(value) => value
+        None =>
+          fail(
+            TrpgError::NotFound(
+              "session is not found",
+              Some("run `trpg session init forgotten_library` first"),
+            ),
+          )
+      }
+  }
+  let scenario = load_scenario_json(session.scenario_id)
+  let goals = goal_statuses(db, session, scenario)
+  let outcome = session.outcome.unwrap_or(derive_session_outcome(goals))
+  let characters = list_characters(db, session.id)
+  let events = list_events(db, session.id, None, None, 200)
+  let key_events = events.filter(event => {
+    match event.kind {
+      "roll" | "contest" | "attack" | "scene" | "item" | "hp" => true
+      _ => false
+    }
+  })
+  let key_event_lines = if key_events.length() == 0 {
+    "(なし)"
+  } else {
+    key_events.map(event => "- \{event.text}").join("\n")
+  }
+  let character_lines = if characters.length() == 0 {
+    "(未登録)"
+  } else {
+    characters
+    .map(row => {
+      let items = inventory_from_sheet_json(row.sheet_json) catch { _ => [] }
+      let items_text = items.join(", ")
+      "- \{row.name} [\{row.kind}] HP \{row.hp_cur}/\{row.hp_max} items=\{items_text} conditions=\{row.conditions_json}"
+    })
+    .join("\n")
+  }
+  let goal_lines = goals
+    .map(goal => {
+      let mark = if goal.satisfied { "x" } else { " " }
+      "- [\{mark}] \{goal.id} (\{goal.outcome}) \{goal.summary}"
+    })
+    .join("\n")
+  let human = "session: \{session.scenario_id}\n" +
+    "outcome: \{outcome}\n" +
+    "scene: \{session.current_scene}\n\n" +
+    "## goals\n" +
+    goal_lines +
+    "\n\n## characters\n" +
+    character_lines +
+    "\n\n## key events\n" +
+    key_event_lines
+  let json = Json::object({
+    "command": "session.report",
+    "session": session_json(session),
+    "outcome": Json::string(outcome),
+    "goals": Json::array(
+      goals.map(goal => {
+        Json::object({
+          "id": Json::string(goal.id),
+          "outcome": Json::string(goal.outcome),
+          "satisfied": Json::boolean(goal.satisfied),
+          "summary": Json::string(goal.summary),
+        })
+      }),
+    ),
+    "characters": Json::array(characters.map(row_to_character_json)),
+    "events": Json::array(
+      key_events.map(event => {
+        Json::object({
+          "id": j_int(event.id),
+          "kind": Json::string(event.kind),
+          "text": Json::string(event.text),
+          "created_at_ms": j_i64(event.created_at_ms),
+        })
+      }),
+    ),
+  })
+  output_success(
+    { json, human, stderr: "session.report: \{session.scenario_id}" },
+    global,
+  )
 }
 
 ///|
@@ -139,9 +286,19 @@ fn session_note(global : GlobalArgs) -> RunResult raise TrpgFailure {
   defer db.close()
   let session = require_active_session(db)
   let id = append_log(db, session.id, "gm", text)
+  let event_id = append_event(
+    db,
+    session.id,
+    "note",
+    Some("gm"),
+    None,
+    "gm: \{text}",
+    Json::object({ "text": Json::string(text) }).stringify(),
+  )
   let json = Json::object({
     "command": "session.note",
     "log_id": j_int(id),
+    "event_id": j_int(event_id),
     "session_id": j_int(session.id),
     "text": Json::string(text),
   })
@@ -150,13 +307,22 @@ fn session_note(global : GlobalArgs) -> RunResult raise TrpgFailure {
 
 ///|
 fn session_json(session : SessionRow) -> Json {
-  Json::object({
+  let object : Map[String, Json] = {
     "id": j_int(session.id),
     "scenario_id": Json::string(session.scenario_id),
     "started_at_ms": j_i64(session.started_at_ms),
     "current_scene": Json::string(session.current_scene),
-    "active": true,
-  })
+    "active": Json::boolean(session.is_active),
+  }
+  match session.ended_at_ms {
+    Some(value) => object["ended_at_ms"] = j_i64(value)
+    None => ()
+  }
+  match session.outcome {
+    Some(value) => object["outcome"] = Json::string(value)
+    None => ()
+  }
+  Json::object(object)
 }
 
 ///|
@@ -181,29 +347,50 @@ fn set_session_scene(
     text_value(key),
     int_value(session.id),
   ])
-  let log_id = match note {
-    Some(text) if !text.is_empty() =>
-      Some(
-        append_log(db, session.id, "gm", "シーン遷移 -> \{key}: \{text}"),
-      )
-    _ => None
+  let scenario = load_scenario_json(session.scenario_id)
+  let scene = require_scenario_scene(scenario, key)
+  let desc = json_string_field(scene, "description", "")
+  let scene_data : Map[String, Json] = {
+    "scene": Json::string(key),
+    "description": Json::string(desc),
+    "transitions": Json::array(transition_candidates(scene)),
   }
+  match note {
+    Some(text) if !text.is_empty() => scene_data["note"] = Json::string(text)
+    _ => ()
+  }
+  match scene_difficulty(scene) {
+    Some(value) => scene_data["difficulty"] = value
+    None => ()
+  }
+  let event_text = match note {
+    Some(text) if !text.is_empty() =>
+      "シーン遷移 -> \{key}: \{text} / \{desc}"
+    _ => "シーン遷移 -> \{key}: \{desc}"
+  }
+  let event_id = append_event(
+    db,
+    session.id,
+    "scene",
+    Some("gm"),
+    Some(key),
+    event_text,
+    Json::object(scene_data).stringify(),
+  )
   let json : Map[String, Json] = {
     "command": Json::string("session.scene"),
     "session_id": j_int(session.id),
     "current_scene": Json::string(key),
+    "event_id": j_int(event_id),
+    "scene": scene,
   }
   match note {
     Some(text) if !text.is_empty() => json["note"] = Json::string(text)
     _ => ()
   }
-  match log_id {
-    Some(value) => json["log_id"] = j_int(value)
-    None => ()
-  }
   let human = match note {
-    Some(text) if !text.is_empty() => "scene -> \{key} / \{text}"
-    _ => "scene -> \{key}"
+    Some(text) if !text.is_empty() => "scene -> \{key} / \{text}\n\{desc}"
+    _ => "scene -> \{key}\n\{desc}"
   }
   json_success(Json::object(json), human, global)
 }
@@ -262,11 +449,12 @@ fn dispatch_pc(global : GlobalArgs) -> RunResult raise TrpgFailure {
   match verb {
     "add" => pc_add(global)
     "show" => pc_show(global)
+    "templates" => pc_templates(global)
     _ =>
       fail(
         TrpgError::Usage(
           "unknown pc verb: \{verb}",
-          Some("supported verbs: add, show"),
+          Some("supported verbs: add, show, templates"),
         ),
       )
   }
@@ -276,16 +464,7 @@ fn dispatch_pc(global : GlobalArgs) -> RunResult raise TrpgFailure {
 fn pc_add(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let name = need_pos(positions, 2, "pc name")
-  let from_path = match option_value(global.args, "--from") {
-    Some(path) => path
-    None =>
-      fail(
-        TrpgError::Usage(
-          "missing --from",
-          Some("use `trpg pc add alice --from path.json`"),
-        ),
-      )
-  }
+  let from_path = resolve_pc_template_path(global.args)
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
@@ -301,13 +480,24 @@ fn pc_add(global : GlobalArgs) -> RunResult raise TrpgFailure {
   }
   let sheet_source = read_text_file(from_path)
   let sheet = parse_json(sheet_source, from_path)
+  let sheet_object = match sheet {
+    Object(object) => object
+    _ =>
+      fail(
+        TrpgError::Usage(
+          "invalid character sheet",
+          Some("character sheet must be a JSON object"),
+        ),
+      )
+  }
+  sheet_object["name"] = Json::string(name)
   let hp_max = json_int_field(sheet, "hp_max", 8)
   let id = insert_character(
     db,
     session.id,
     name,
     "pc",
-    sheet.stringify(),
+    Json::object(sheet_object).stringify(),
     hp_max,
   )
   let row = require_character(db, session.id, name)
@@ -329,7 +519,11 @@ fn pc_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let row = require_character(db, session.id, name)
   match option_value(global.args, "--for-roll") {
     Some(ability) => {
-      let preview = roll_preview(row, ability)
+      let preview = roll_preview(
+        row,
+        ability,
+        parse_tags_csv(option_value(global.args, "--tags")),
+      )
       let json = Json::object({
         "command": "pc.show",
         "character": row_to_character_json(row),
@@ -348,7 +542,117 @@ fn pc_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
 }
 
 ///|
+fn resolve_pc_template_path(args : Array[String]) -> String raise TrpgFailure {
+  match option_value(args, "--from") {
+    Some(path) => path
+    None =>
+      match option_value(args, "--template") {
+        Some(template_id) => scenario_template_path(template_id)
+        None =>
+          fail(
+            TrpgError::Usage(
+              "missing --from or --template",
+              Some(
+                "use `trpg pc add alice --from path.json` or `trpg pc add alice --template alice`",
+              ),
+            ),
+          )
+      }
+  }
+}
+
+///|
+fn scenario_template_path(template_id : String) -> String raise TrpgFailure {
+  let path = scenarios_dir() + "/sample_pc_\{template_id}.json"
+  if @fs.path_exists(path) {
+    path
+  } else {
+    fail(
+      TrpgError::NotFound(
+        "template not found: \{template_id}",
+        Some("run `trpg pc templates list` to inspect available templates"),
+      ),
+    )
+  }
+}
+
+///|
+fn pc_templates(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let verb = need_pos(positions, 2, "templates verb")
+  match verb {
+    "list" => pc_templates_list(global)
+    _ =>
+      fail(
+        TrpgError::Usage(
+          "unknown templates verb: \{verb}",
+          Some("supported verbs: list"),
+        ),
+      )
+  }
+}
+
+///|
+fn pc_templates_list(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let directory = scenarios_dir()
+  let entries = @fs.read_dir(directory) catch {
+    err =>
+      fail(
+        TrpgError::NotFound(
+          "failed to read scenarios directory",
+          Some(err.to_string()),
+        ),
+      )
+  }
+  let templates = entries
+    .filter(name => name.has_prefix("sample_pc_") && name.has_suffix(".json"))
+    .map(name => {
+      let template_id = name[10:name.length() - 5].to_string()
+      Json::object({
+        "id": Json::string(template_id),
+        "path": Json::string(directory + "/" + name),
+      })
+    })
+  let human = if templates.length() == 0 {
+    "(なし)"
+  } else {
+    templates
+    .map(template => {
+      let template_id = json_string_field(template, "id", "")
+      let path = json_string_field(template, "path", "")
+      "- \{template_id}: \{path}"
+    })
+    .join("\n")
+  }
+  output_success(
+    {
+      json: Json::object({
+        "command": "pc.templates.list",
+        "templates": Json::array(templates),
+      }),
+      human,
+      stderr: "pc.templates.list",
+    },
+    global,
+  )
+}
+
+///|
 fn dispatch_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let verb_or_expr = need_pos(positions, 1, "roll expression or subcommand")
+  if verb_or_expr == "history" {
+    roll_history(global)
+  } else if option_value(global.args, "--stat") != None ||
+    flag_present(global.args, "--scene-default") {
+    character_roll(global)
+  } else {
+    raw_roll(global)
+  }
+}
+
+///|
+fn raw_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let expr = need_pos(positions, 1, "dice expression")
   let target = match option_value(global.args, "--target") {
@@ -362,16 +666,239 @@ fn dispatch_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
-  let rolls_json = json_int_array(roll.rolls).stringify()
+  let roll_id = insert_roll_record(
+    db,
+    session.id,
+    expr,
+    roll.total,
+    roll.rolls,
+    roll.mod,
+    target,
+    outcome,
+    rolled_by,
+    context,
+  )
+  let actor = rolled_by.unwrap_or("gm")
+  let event_text = roll_event_text(
+    actor,
+    expr,
+    roll.total,
+    target,
+    outcome,
+    context,
+  )
+  let event_id = append_event(
+    db,
+    session.id,
+    "roll",
+    Some(actor),
+    None,
+    event_text,
+    Json::object({
+      "mode": Json::string("raw"),
+      "expr": Json::string(expr),
+      "total": j_int(roll.total),
+      "rolls": json_int_array(roll.rolls),
+      "modifier_total": j_int(roll.mod),
+      "target": match target {
+        Some(v) => j_int(v)
+        None => Json::null()
+      },
+      "outcome": Json::string(outcome),
+    }).stringify(),
+  )
+  let json = Json::object({
+    "command": "roll",
+    "mode": Json::string("raw"),
+    "expr": Json::string(expr),
+    "total": j_int(roll.total),
+    "rolls": json_int_array(roll.rolls),
+    "mod": j_int(roll.mod),
+    "target": match target {
+      Some(v) => j_int(v)
+      None => Json::null()
+    },
+    "outcome": Json::string(outcome),
+    "roll_id": j_int(roll_id),
+    "event_id": j_int(event_id),
+  })
+  let target_text = match target {
+    Some(v) => " (target \{v} -> \{outcome})"
+    None => ""
+  }
+  json_success(
+    json,
+    "\{expr} = \{roll.breakdown} = \{roll.total}\{target_text}",
+    global,
+  )
+}
+
+///|
+fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let actor = need_pos(positions, 1, "actor name")
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let row = require_character(db, session.id, actor)
+  let scenario = load_scenario_json(session.scenario_id)
+  let current_scene = require_scenario_scene(scenario, session.current_scene)
+  let scene_default = flag_present(global.args, "--scene-default")
+  let scene_tags = if scene_default {
+    scene_difficulty_tags(current_scene)
+  } else {
+    []
+  }
+  let user_tags = parse_tags_csv(option_value(global.args, "--tags"))
+  let tag_candidates : Array[String] = []
+  for tag in scene_tags {
+    tag_candidates.push(tag)
+  }
+  for tag in user_tags {
+    tag_candidates.push(tag)
+  }
+  let tags = unique_strings(tag_candidates)
+  let ability = match option_value(global.args, "--stat") {
+    Some(value) => normalize_ability(value)
+    None =>
+      if scene_default {
+        match scene_difficulty_stat(current_scene) {
+          Some(value) => normalize_ability(value)
+          None =>
+            fail(
+              TrpgError::Usage(
+                "current scene has no default difficulty stat",
+                Some("set `difficulty.stat` in the scenario or pass --stat"),
+              ),
+            )
+        }
+      } else {
+        fail(
+          TrpgError::Usage(
+            "missing --stat",
+            Some("use `trpg roll alice --stat tech --target 9`"),
+          ),
+        )
+      }
+  }
+  let target = match option_value(global.args, "--target") {
+    Some(value) => Some(parse_int_arg(value, "target"))
+    None =>
+      if scene_default {
+        scene_difficulty_target(current_scene)
+      } else {
+        None
+      }
+  }
+  let scene_warning = if scene_default {
+    match scene_difficulty_stat(current_scene) {
+      Some(value) if value != ability =>
+        Some("scene default stat is \{value}, but roll uses \{ability}")
+      _ => None
+    }
+  } else {
+    None
+  }
+  let bonus = match option_value(global.args, "--bonus") {
+    Some(value) => parse_int_arg(value, "bonus")
+    None => 0
+  }
+  let context = option_value(global.args, "--context")
+  let resolved = actor_roll(row, ability, bonus, target, tags, scene_warning)
+  if !flag_present(global.args, "--no-consume") &&
+    resolved.consumed_statuses.length() > 0 {
+    let next_conditions = consume_statuses_json(
+      row.conditions_json,
+      resolved.consumed_statuses,
+    )
+    update_character_conditions(db, row.id, next_conditions)
+  }
+  let roll_id = insert_roll_record(
+    db,
+    session.id,
+    resolved.expr,
+    resolved.total,
+    resolved.rolls,
+    resolved.modifier_total,
+    target,
+    resolved.outcome,
+    Some(actor),
+    context,
+  )
+  let event_text = roll_event_text(
+    actor,
+    resolved.expr,
+    resolved.total,
+    target,
+    resolved.outcome,
+    context,
+  )
+  let event_data : Map[String, Json] = {
+    "command": Json::string("roll"),
+    "mode": Json::string("character"),
+    "tags": Json::array(tags.map(value => Json::string(value))),
+    "roll_id": j_int(roll_id),
+  }
+  match actor_roll_json(resolved) {
+    Object(object) =>
+      for key, value in object {
+        event_data[key] = value
+      }
+    _ => ()
+  }
+  let event_id = append_event(
+    db,
+    session.id,
+    "roll",
+    Some(actor),
+    Some(ability),
+    event_text,
+    Json::object(event_data).stringify(),
+  )
+  let json : Map[String, Json] = {
+    "command": Json::string("roll"),
+    "mode": Json::string("character"),
+    "roll_id": j_int(roll_id),
+    "event_id": j_int(event_id),
+    "tags": Json::array(tags.map(value => Json::string(value))),
+  }
+  match actor_roll_json(resolved) {
+    Object(object) =>
+      for key, value in object {
+        json[key] = value
+      }
+    _ => ()
+  }
+  match context {
+    Some(value) => json["context"] = Json::string(value)
+    None => ()
+  }
+  json_success(Json::object(json), format_actor_roll(resolved), global)
+}
+
+///|
+fn insert_roll_record(
+  db : @sqlite.Database,
+  session_id : Int,
+  expr : String,
+  total : Int,
+  rolls : Array[Int],
+  mod : Int,
+  target : Int?,
+  outcome : String,
+  rolled_by : String?,
+  context : String?,
+) -> Int raise TrpgFailure {
+  let rolls_json = json_int_array(rolls).stringify()
   execute_bound(
     db,
     "INSERT INTO rolls (session_id, expr, total, rolls_json, mod, target, outcome, rolled_by, context, created_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
-      int_value(session.id),
+      int_value(session_id),
       text_value(expr),
-      int_value(roll.total),
+      int_value(total),
       text_value(rolls_json),
-      int_value(roll.mod),
+      int_value(mod),
       match target {
         Some(v) => int_value(v)
         None => @sqlite.SqlValue::Null
@@ -388,29 +915,63 @@ fn dispatch_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
       int64_value(now_ms()),
     ],
   )
-  let roll_id = db.last_insert_rowid().to_int()
-  let json = Json::object({
-    "command": "roll",
-    "expr": Json::string(expr),
-    "total": j_int(roll.total),
-    "rolls": json_int_array(roll.rolls),
-    "mod": j_int(roll.mod),
-    "target": match target {
-      Some(v) => j_int(v)
-      None => Json::null()
-    },
-    "outcome": Json::string(outcome),
-    "roll_id": j_int(roll_id),
-  })
+  db.last_insert_rowid().to_int()
+}
+
+///|
+fn roll_event_text(
+  actor : String,
+  expr : String,
+  total : Int,
+  target : Int?,
+  outcome : String,
+  context : String?,
+) -> String {
   let target_text = match target {
-    Some(v) => " (target \{v} -> \{outcome})"
+    Some(value) => " / target=\{value}"
     None => ""
   }
-  json_success(
-    json,
-    "\{expr} = \{roll.breakdown} = \{roll.total}\{target_text}",
-    global,
-  )
+  let context_text = match context {
+    Some(value) if !value.is_empty() => " / \{value}"
+    _ => ""
+  }
+  "判定 \{actor}: \{expr} = \{total}\{target_text} / \{outcome}\{context_text}"
+}
+
+///|
+fn roll_history(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let limit = match option_value(global.args, "-n") {
+    Some(value) => parse_int_arg(value, "limit")
+    None => 20
+  }
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let actor = option_value(global.args, "--as")
+  let events = list_events(db, session.id, Some("roll"), actor, limit)
+  let json = Json::object({
+    "command": "roll.history",
+    "events": Json::array(
+      events.map(event => {
+        Json::object({
+          "id": j_int(event.id),
+          "actor": match event.actor {
+            Some(value) => Json::string(value)
+            None => Json::null()
+          },
+          "text": Json::string(event.text),
+          "created_at_ms": j_i64(event.created_at_ms),
+          "data": parse_json(event.data_json, "events.data_json"),
+        })
+      }),
+    ),
+  })
+  let human = if events.length() == 0 {
+    "(なし)"
+  } else {
+    events.map(event => "- \{event.text}").join("\n")
+  }
+  output_success({ json, human, stderr: "roll.history" }, global)
 }
 
 ///|
@@ -418,6 +979,8 @@ fn dispatch_hp(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let name = need_pos(positions, 1, "character name")
   let delta = parse_int_arg(need_pos(positions, 2, "hp delta"), "hp delta")
+  let actor = option_value(global.args, "--by").unwrap_or("gm")
+  let context = option_value(global.args, "--context")
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
@@ -434,6 +997,30 @@ fn dispatch_hp(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "hp_cur": j_int(next),
     "hp_max": j_int(row.hp_max),
   })
+  let text = match context {
+    Some(value) if !value.is_empty() =>
+      "\{actor}: \{name} HP \{row.hp_cur} -> \{next} / \{value}"
+    _ => "\{actor}: \{name} HP \{row.hp_cur} -> \{next}"
+  }
+  ignore(
+    append_event(
+      db,
+      session.id,
+      "hp",
+      Some(actor),
+      Some(name),
+      text,
+      Json::object({
+        "delta": j_int(delta),
+        "hp_cur": j_int(next),
+        "hp_max": j_int(row.hp_max),
+        "context": match context {
+          Some(value) => Json::string(value)
+          None => Json::null()
+        },
+      }).stringify(),
+    ),
+  )
   json_success(json, "\{name}: HP \{row.hp_cur} -> \{next}", global)
 }
 
@@ -455,6 +1042,7 @@ fn dispatch_status(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let op = need_pos(positions, 2, "status operation")
   let tag = need_pos(positions, 3, "status tag")
   let note = option_value(global.args, "--note").unwrap_or("")
+  let tags = parse_tags_csv(option_value(global.args, "--tags"))
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
@@ -472,6 +1060,7 @@ fn dispatch_status(global : GlobalArgs) -> RunResult raise TrpgFailure {
         },
         option_value(global.args, "--duration"),
         option_value(global.args, "--on-trigger"),
+        tags,
       )
     "remove" => remove_condition(row.conditions_json, tag)
     _ =>
@@ -490,6 +1079,23 @@ fn dispatch_status(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "tag": Json::string(tag),
     "conditions": parse_json(conditions_json, "conditions_json"),
   })
+  let event_text = "\{name}: status \{op} \{tag}"
+  ignore(
+    append_event(
+      db,
+      session.id,
+      "status",
+      Some("gm"),
+      Some(name),
+      event_text,
+      Json::object({
+        "operation": Json::string(op),
+        "tag": Json::string(tag),
+        "tags": Json::array(tags.map(value => Json::string(value))),
+        "conditions": parse_json(conditions_json, "conditions_json"),
+      }).stringify(),
+    ),
+  )
   json_success(json, "\{name}: status \{op} \{tag}", global)
 }
 
@@ -502,6 +1108,7 @@ fn add_condition(
   uses : Int?,
   duration : String?,
   on_trigger : String?,
+  tags : Array[String],
 ) -> String raise TrpgFailure {
   let arr = match parse_json(source, "conditions_json") {
     Array(items) => items
@@ -513,8 +1120,12 @@ fn add_condition(
     "applied_at_ms": j_i64(now_ms()),
   }
   match modifier {
-    Some(value) =>
-      condition["modifier"] = Json::string(normalize_modifier_spec(value))
+    Some(value) => {
+      let (ability, amount) = parse_modifier_spec(value)
+      condition["effects"] = Json::array([
+        effect_json(ability, amount, tags, "roll"),
+      ])
+    }
     None => ()
   }
   match uses {
@@ -565,11 +1176,12 @@ fn dispatch_log(global : GlobalArgs) -> RunResult raise TrpgFailure {
   match verb {
     "add" => log_add(global)
     "tail" => log_tail(global)
+    "show" => log_show(global)
     _ =>
       fail(
         TrpgError::Usage(
           "unknown log verb: \{verb}",
-          Some("supported verbs: add, tail"),
+          Some("supported verbs: add, tail, show"),
         ),
       )
   }
@@ -584,9 +1196,19 @@ fn log_add(global : GlobalArgs) -> RunResult raise TrpgFailure {
   defer db.close()
   let session = require_active_session(db)
   let id = append_log(db, session.id, actor, text)
+  let event_id = append_event(
+    db,
+    session.id,
+    "log",
+    Some(actor),
+    None,
+    "\{actor}: \{text}",
+    Json::object({ "text": Json::string(text) }).stringify(),
+  )
   let json = Json::object({
     "command": "log.add",
     "log_id": j_int(id),
+    "event_id": j_int(event_id),
     "actor": Json::string(actor),
     "text": Json::string(text),
   })
@@ -628,6 +1250,43 @@ fn log_tail(global : GlobalArgs) -> RunResult raise TrpgFailure {
 }
 
 ///|
+fn log_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let limit = match option_value(global.args, "-n") {
+    Some(value) => parse_int_arg(value, "limit")
+    None => 20
+  }
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let kind = option_value(global.args, "--kind")
+  let actor = option_value(global.args, "--by")
+  let events = list_events(db, session.id, kind, actor, limit)
+  let json = Json::object({
+    "command": "log.show",
+    "events": Json::array(
+      events.map(event => {
+        Json::object({
+          "id": j_int(event.id),
+          "kind": Json::string(event.kind),
+          "actor": match event.actor {
+            Some(value) => Json::string(value)
+            None => Json::null()
+          },
+          "text": Json::string(event.text),
+          "created_at_ms": j_i64(event.created_at_ms),
+        })
+      }),
+    ),
+  })
+  let human = if events.length() == 0 {
+    "(なし)"
+  } else {
+    events.map(event => "- [\{event.kind}] \{event.text}").join("\n")
+  }
+  output_success({ json, human, stderr: "log.show" }, global)
+}
+
+///|
 fn dispatch_item(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let verb = need_pos(positions, 1, "item verb")
@@ -651,24 +1310,54 @@ fn item_give(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let name = need_pos(positions, 2, "character name")
   let item = need_pos(positions, 3, "item name")
   let note = option_value(global.args, "--note")
+  let desc = option_value(global.args, "--desc")
+  let effect = option_value(global.args, "--effect")
+  let tags = parse_tags_csv(option_value(global.args, "--tags"))
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
   let row = require_character(db, session.id, name)
-  let next_sheet = add_inventory_item_json(row.sheet_json, item)
+  let next_sheet = add_inventory_item_json(
+    row.sheet_json,
+    item,
+    desc,
+    effect,
+    tags,
+  )
   update_character_sheet(db, row.id, next_sheet)
   let text = match note {
     Some(value) if !value.is_empty() =>
       "\{name} が \{item} を獲得: \{value}"
     _ => "\{name} が \{item} を獲得"
   }
-  let log_id = append_log(db, session.id, "gm", text)
   let updated = require_character(db, session.id, name)
+  let event_id = append_event(
+    db,
+    session.id,
+    "item",
+    Some("gm"),
+    Some(name),
+    text,
+    Json::object({
+      "operation": Json::string("give"),
+      "item": Json::string(item),
+      "effect": match effect {
+        Some(value) => Json::string(value)
+        None => Json::null()
+      },
+      "tags": Json::array(tags.map(value => Json::string(value))),
+      "inventory": Json::array(
+        inventory_from_sheet_json(updated.sheet_json).map(value => {
+          Json::string(value)
+        }),
+      ),
+    }).stringify(),
+  )
   let json = Json::object({
     "command": "item.give",
     "name": Json::string(name),
     "item": Json::string(item),
-    "log_id": j_int(log_id),
+    "event_id": j_int(event_id),
     "inventory": Json::array(
       inventory_from_sheet_json(updated.sheet_json).map(value => {
         Json::string(value)
@@ -695,13 +1384,29 @@ fn item_drop(global : GlobalArgs) -> RunResult raise TrpgFailure {
       "\{name} が \{item} を失う: \{value}"
     _ => "\{name} が \{item} を失う"
   }
-  let log_id = append_log(db, session.id, "gm", text)
   let updated = require_character(db, session.id, name)
+  let event_id = append_event(
+    db,
+    session.id,
+    "item",
+    Some("gm"),
+    Some(name),
+    text,
+    Json::object({
+      "operation": Json::string("drop"),
+      "item": Json::string(item),
+      "inventory": Json::array(
+        inventory_from_sheet_json(updated.sheet_json).map(value => {
+          Json::string(value)
+        }),
+      ),
+    }).stringify(),
+  )
   let json = Json::object({
     "command": "item.drop",
     "name": Json::string(name),
     "item": Json::string(item),
-    "log_id": j_int(log_id),
+    "event_id": j_int(event_id),
     "inventory": Json::array(
       inventory_from_sheet_json(updated.sheet_json).map(value => {
         Json::string(value)
@@ -769,12 +1474,15 @@ fn dispatch_scene(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let verb = need_pos(positions, 1, "scene verb")
   match verb {
     "set" => scene_set(global)
+    "list" => scene_list(global)
+    "show" => scene_show(global)
+    "next" => scene_next(global)
     "flag" => scene_flag(global)
     _ =>
       fail(
         TrpgError::Usage(
           "unknown scene verb: \{verb}",
-          Some("supported verbs: set, flag"),
+          Some("supported verbs: set, list, show, next, flag"),
         ),
       )
   }
@@ -822,7 +1530,137 @@ fn scene_flag(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "value": Json::string(value),
     "flags": Json::object(flags),
   })
+  ignore(
+    append_event(
+      db,
+      session.id,
+      "scene",
+      Some("gm"),
+      Some(session.current_scene),
+      "scene flag \{session.current_scene}.\{key}=\{value}",
+      Json::object({
+        "scene": Json::string(session.current_scene),
+        "flag": Json::string(key),
+        "value": Json::string(value),
+      }).stringify(),
+    ),
+  )
   json_success(json, "flag[\{session.current_scene}] \{key}=\{value}", global)
+}
+
+///|
+fn scene_list(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let scenario = load_scenario_json(session.scenario_id)
+  let current = session.current_scene
+  let scenes = match json_get(scenario, "scenes") {
+    Some(Object(object)) => object
+    _ => {}
+  }
+  let transitions = available_scene_transitions(db, session, scenario)
+  let human_lines : Array[String] = []
+  let scene_rows : Array[Json] = []
+  for key, scene in scenes {
+    human_lines.push(format_scene_summary(key, scene, key == current))
+    scene_rows.push(
+      Json::object({
+        "key": Json::string(key),
+        "current": Json::boolean(key == current),
+        "scene": scene,
+      }),
+    )
+  }
+  let json = Json::object({
+    "command": "scene.list",
+    "current_scene": Json::string(current),
+    "scenes": Json::array(scene_rows),
+    "available_transitions": Json::array(transitions),
+  })
+  let transitions_text = if transitions.length() == 0 {
+    "(なし)"
+  } else {
+    transitions.map(format_scene_transition).join("\n")
+  }
+  let human = human_lines.join("\n") + "\n\n遷移候補:\n" + transitions_text
+  output_success({ json, human, stderr: "scene.list" }, global)
+}
+
+///|
+fn scene_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let scenario = load_scenario_json(session.scenario_id)
+  let key = positions.get(2).unwrap_or(session.current_scene)
+  let scene = require_scenario_scene(scenario, key)
+  let flags = load_scene_flags(db, session.id, key)
+  let transitions = if key == session.current_scene {
+    available_scene_transitions(db, session, scenario)
+  } else {
+    transition_candidates(scene)
+  }
+  let difficulty_text = match scene_difficulty(scene) {
+    Some(info) => {
+      let stat = json_string_field(info, "stat", "")
+      let target = json_int_field(info, "target", 0)
+      "\{stat} \{target}"
+    }
+    None => "(なし)"
+  }
+  let transitions_text = if transitions.length() == 0 {
+    "(なし)"
+  } else {
+    transitions.map(format_scene_transition).join("\n")
+  }
+  let human = "scene: \{key}\n" +
+    json_string_field(scene, "description", "") +
+    "\n難易度: \{difficulty_text}\n遷移:\n" +
+    transitions_text
+  let json = Json::object({
+    "command": "scene.show",
+    "key": Json::string(key),
+    "current": Json::boolean(key == session.current_scene),
+    "scene": scene,
+    "flags": Json::object(flags),
+    "available_transitions": Json::array(transitions),
+  })
+  output_success({ json, human, stderr: "scene.show: \{key}" }, global)
+}
+
+///|
+fn scene_next(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let scenario = load_scenario_json(session.scenario_id)
+  let transitions = available_scene_transitions(db, session, scenario)
+  if transitions.length() == 0 {
+    fail(
+      TrpgError::Conflict(
+        "no available transition",
+        Some("use `trpg scene list` to inspect current scene state"),
+      ),
+    )
+  }
+  if transitions.length() > 1 {
+    fail(
+      TrpgError::Conflict(
+        "multiple transitions are available",
+        Some("use `trpg scene list` or `trpg session scene <id>`"),
+      ),
+    )
+  }
+  let next_scene = json_string_field(transitions[0], "to", "")
+  set_session_scene(
+    db,
+    session,
+    next_scene,
+    option_value(global.args, "--note"),
+    global,
+  )
 }
 
 ///|
@@ -853,14 +1691,29 @@ fn dispatch_scenario(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let verb = need_pos(positions, 1, "scenario verb")
   match verb {
     "show" => scenario_show(global)
+    "validate" => scenario_validate(global)
     _ =>
       fail(
         TrpgError::Usage(
           "unknown scenario verb: \{verb}",
-          Some("supported verbs: show"),
+          Some("supported verbs: show, validate"),
         ),
       )
   }
+}
+
+///|
+fn scenario_validate(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let scenario_id = need_pos(positions, 2, "scenario id")
+  let scenario = load_scenario_json(scenario_id)
+  validate_scenario_json(scenario, scenario_id)
+  let json = Json::object({
+    "command": "scenario.validate",
+    "scenario_id": Json::string(scenario_id),
+    "valid": true,
+  })
+  json_success(json, "scenario valid: \{scenario_id}", global)
 }
 
 ///|
@@ -868,12 +1721,14 @@ fn scenario_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let scenario_id = need_pos(positions, 2, "scenario id")
   let scenario = load_scenario_json(scenario_id)
+  validate_scenario_json(scenario, scenario_id)
   let title = json_string_field(scenario, "title", scenario_id)
   let summary = json_string_field(scenario, "summary", "")
   let opening = json_string_field(scenario, "opening_scene", "entrance")
   let scene_lines = format_scenario_scenes(scenario)
   let npc_lines = format_scenario_npcs(scenario)
   let party_setup = format_party_setup(scenario)
+  let goals = format_scenario_goals(scenario)
   let human = "シナリオ: \{title}\n" +
     "id: \{scenario_id}\n" +
     "概要: \{summary}\n" +
@@ -882,6 +1737,8 @@ fn scenario_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
     party_setup +
     "\n\n## scenes\n" +
     scene_lines +
+    "\n\n## goals\n" +
+    goals +
     "\n\n## npcs\n" +
     npc_lines
   let json = Json::object({
@@ -902,13 +1759,23 @@ fn format_scenario_scenes(scenario : Json) -> String {
       let lines : Array[String] = []
       for key, value in scenes {
         let description = json_string_field(value, "description", "")
-        let hint = json_string_field(value, "difficulty_hint", "")
-        let suffix = if hint.is_empty() {
+        let difficulty = match scene_difficulty(value) {
+          Some(info) => {
+            let stat = json_string_field(info, "stat", "")
+            let target = json_int_field(info, "target", 0)
+            "\{stat} \{target}"
+          }
+          None => ""
+        }
+        let transition_count = transition_candidates(value).length()
+        let suffix = if difficulty.is_empty() {
           ""
         } else {
-          " / 難易度目安: " + hint
+          " / 難易度: " + difficulty
         }
-        lines.push("- \{key}: \{description}\{suffix}")
+        lines.push(
+          "- \{key}: \{description}\{suffix} / transitions=\{transition_count}",
+        )
       }
       if lines.length() == 0 {
         "(なし)"
@@ -951,6 +1818,22 @@ fn format_scenario_npcs(scenario : Json) -> String {
       }
     }
     _ => "(なし)"
+  }
+}
+
+///|
+fn format_scenario_goals(scenario : Json) -> String {
+  let lines : Array[String] = []
+  for goal in json_array_field(scenario, "goals") {
+    let id = json_string_field(goal, "id", "goal")
+    let kind = json_string_field(goal, "kind", "")
+    let outcome = json_string_field(goal, "outcome", "success")
+    lines.push("- \{id} [\{outcome}] \{kind}")
+  }
+  if lines.length() == 0 {
+    "(なし)"
+  } else {
+    lines.join("\n")
   }
 }
 
@@ -1012,5 +1895,450 @@ fn format_party_setup(scenario : Json) -> String {
       "- solo_friendly: \{solo}\n- recommended_party_size: \{range_text}\n- sample_pcs: \{sample_text}\n- default_participants: \{defaults}"
     }
     _ => "(なし)"
+  }
+}
+
+///|
+fn dispatch_contest(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let actor_a = need_pos(positions, 1, "actor A")
+  let actor_b = need_pos(positions, 2, "actor B")
+  let a_stat = normalize_ability(
+    match option_value(global.args, "--a-stat") {
+      Some(value) => value
+      None =>
+        fail(
+          TrpgError::Usage(
+            "missing --a-stat",
+            Some("use `trpg contest alice ghost --a-stat tech --b-stat mind`"),
+          ),
+        )
+    },
+  )
+  let b_stat = normalize_ability(
+    match option_value(global.args, "--b-stat") {
+      Some(value) => value
+      None =>
+        fail(
+          TrpgError::Usage(
+            "missing --b-stat",
+            Some("use `trpg contest alice ghost --a-stat tech --b-stat mind`"),
+          ),
+        )
+    },
+  )
+  let target = match option_value(global.args, "--target") {
+    Some(value) => Some(parse_int_arg(value, "target"))
+    None => None
+  }
+  let a_bonus = match option_value(global.args, "--a-bonus") {
+    Some(value) => parse_int_arg(value, "a-bonus")
+    None => 0
+  }
+  let b_bonus = match option_value(global.args, "--b-bonus") {
+    Some(value) => parse_int_arg(value, "b-bonus")
+    None => 0
+  }
+  let a_tags = parse_tags_csv(option_value(global.args, "--a-tags"))
+  let b_tags = parse_tags_csv(option_value(global.args, "--b-tags"))
+  let context = option_value(global.args, "--context")
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let row_a = require_character(db, session.id, actor_a)
+  let row_b = require_character(db, session.id, actor_b)
+  let roll_a = actor_roll(row_a, a_stat, a_bonus, target, a_tags, None)
+  let roll_b = actor_roll(row_b, b_stat, b_bonus, target, b_tags, None)
+  if !flag_present(global.args, "--no-consume") {
+    if roll_a.consumed_statuses.length() > 0 {
+      update_character_conditions(
+        db,
+        row_a.id,
+        consume_statuses_json(row_a.conditions_json, roll_a.consumed_statuses),
+      )
+    }
+    if roll_b.consumed_statuses.length() > 0 {
+      update_character_conditions(
+        db,
+        row_b.id,
+        consume_statuses_json(row_b.conditions_json, roll_b.consumed_statuses),
+      )
+    }
+  }
+  let roll_a_id = insert_roll_record(
+    db,
+    session.id,
+    roll_a.expr,
+    roll_a.total,
+    roll_a.rolls,
+    roll_a.modifier_total,
+    target,
+    roll_a.outcome,
+    Some(actor_a),
+    contest_context_text(context, actor_a, actor_b),
+  )
+  let roll_b_id = insert_roll_record(
+    db,
+    session.id,
+    roll_b.expr,
+    roll_b.total,
+    roll_b.rolls,
+    roll_b.modifier_total,
+    target,
+    roll_b.outcome,
+    Some(actor_b),
+    contest_context_text(context, actor_a, actor_b),
+  )
+  ignore(
+    append_event(
+      db,
+      session.id,
+      "roll",
+      Some(actor_a),
+      Some(a_stat),
+      roll_event_text(
+        actor_a,
+        roll_a.expr,
+        roll_a.total,
+        target,
+        roll_a.outcome,
+        contest_context_text(context, actor_a, actor_b),
+      ),
+      actor_roll_json(roll_a).stringify(),
+    ),
+  )
+  ignore(
+    append_event(
+      db,
+      session.id,
+      "roll",
+      Some(actor_b),
+      Some(b_stat),
+      roll_event_text(
+        actor_b,
+        roll_b.expr,
+        roll_b.total,
+        target,
+        roll_b.outcome,
+        contest_context_text(context, actor_a, actor_b),
+      ),
+      actor_roll_json(roll_b).stringify(),
+    ),
+  )
+  let winner = if roll_a.total > roll_b.total {
+    Some(actor_a)
+  } else if roll_b.total > roll_a.total {
+    Some(actor_b)
+  } else {
+    None
+  }
+  let margin = if roll_a.total >= roll_b.total {
+    roll_a.total - roll_b.total
+  } else {
+    roll_b.total - roll_a.total
+  }
+  let contest_text = match winner {
+    Some(name) =>
+      "対抗判定 \{actor_a}(\{roll_a.total}) vs \{actor_b}(\{roll_b.total}) -> \{name} / margin=\{margin}"
+    None =>
+      "対抗判定 \{actor_a}(\{roll_a.total}) vs \{actor_b}(\{roll_b.total}) -> tie"
+  }
+  let event_id = append_event(
+    db,
+    session.id,
+    "contest",
+    None,
+    None,
+    contest_text,
+    Json::object({
+      "actor_a": actor_roll_json(roll_a),
+      "actor_b": actor_roll_json(roll_b),
+      "winner": match winner {
+        Some(value) => Json::string(value)
+        None => Json::null()
+      },
+      "margin": j_int(margin),
+      "roll_a_id": j_int(roll_a_id),
+      "roll_b_id": j_int(roll_b_id),
+    }).stringify(),
+  )
+  let json = Json::object({
+    "command": "contest",
+    "actor_a": actor_roll_json(roll_a),
+    "actor_b": actor_roll_json(roll_b),
+    "winner": match winner {
+      Some(value) => Json::string(value)
+      None => Json::null()
+    },
+    "margin": j_int(margin),
+    "event_id": j_int(event_id),
+  })
+  output_success({ json, human: contest_text, stderr: contest_text }, global)
+}
+
+///|
+fn dispatch_attack(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let attacker = need_pos(positions, 1, "attacker")
+  let defender = need_pos(positions, 2, "defender")
+  let atk_stat = normalize_ability(
+    match option_value(global.args, "--atk") {
+      Some(value) => value
+      None =>
+        fail(
+          TrpgError::Usage(
+            "missing --atk",
+            Some(
+              "use `trpg attack ghost alice --atk mind --def tech --damage 1d6`",
+            ),
+          ),
+        )
+    },
+  )
+  let def_stat = normalize_ability(
+    match option_value(global.args, "--def") {
+      Some(value) => value
+      None =>
+        fail(
+          TrpgError::Usage(
+            "missing --def",
+            Some(
+              "use `trpg attack ghost alice --atk mind --def tech --damage 1d6`",
+            ),
+          ),
+        )
+    },
+  )
+  let damage_expr = match option_value(global.args, "--damage") {
+    Some(value) => value
+    None =>
+      fail(
+        TrpgError::Usage(
+          "missing --damage",
+          Some(
+            "use `trpg attack ghost alice --atk mind --def tech --damage 1d6`",
+          ),
+        ),
+      )
+  }
+  let atk_bonus = match option_value(global.args, "--atk-bonus") {
+    Some(value) => parse_int_arg(value, "atk-bonus")
+    None => 0
+  }
+  let def_bonus = match option_value(global.args, "--def-bonus") {
+    Some(value) => parse_int_arg(value, "def-bonus")
+    None => 0
+  }
+  let atk_tags = parse_tags_csv(option_value(global.args, "--atk-tags"))
+  let def_tags = parse_tags_csv(option_value(global.args, "--def-tags"))
+  let context = option_value(global.args, "--context")
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let row_atk = require_character(db, session.id, attacker)
+  let row_def = require_character(db, session.id, defender)
+  let roll_atk = actor_roll(row_atk, atk_stat, atk_bonus, None, atk_tags, None)
+  let roll_def = actor_roll(row_def, def_stat, def_bonus, None, def_tags, None)
+  if !flag_present(global.args, "--no-consume") {
+    if roll_atk.consumed_statuses.length() > 0 {
+      update_character_conditions(
+        db,
+        row_atk.id,
+        consume_statuses_json(
+          row_atk.conditions_json,
+          roll_atk.consumed_statuses,
+        ),
+      )
+    }
+    if roll_def.consumed_statuses.length() > 0 {
+      update_character_conditions(
+        db,
+        row_def.id,
+        consume_statuses_json(
+          row_def.conditions_json,
+          roll_def.consumed_statuses,
+        ),
+      )
+    }
+  }
+  let contest_text = contest_context_text(context, attacker, defender)
+  ignore(
+    insert_roll_record(
+      db,
+      session.id,
+      roll_atk.expr,
+      roll_atk.total,
+      roll_atk.rolls,
+      roll_atk.modifier_total,
+      None,
+      roll_atk.outcome,
+      Some(attacker),
+      contest_text,
+    ),
+  )
+  ignore(
+    append_event(
+      db,
+      session.id,
+      "roll",
+      Some(attacker),
+      Some(atk_stat),
+      roll_event_text(
+        attacker,
+        roll_atk.expr,
+        roll_atk.total,
+        None,
+        roll_atk.outcome,
+        contest_text,
+      ),
+      actor_roll_json(roll_atk).stringify(),
+    ),
+  )
+  ignore(
+    insert_roll_record(
+      db,
+      session.id,
+      roll_def.expr,
+      roll_def.total,
+      roll_def.rolls,
+      roll_def.modifier_total,
+      None,
+      roll_def.outcome,
+      Some(defender),
+      contest_text,
+    ),
+  )
+  ignore(
+    append_event(
+      db,
+      session.id,
+      "roll",
+      Some(defender),
+      Some(def_stat),
+      roll_event_text(
+        defender,
+        roll_def.expr,
+        roll_def.total,
+        None,
+        roll_def.outcome,
+        contest_text,
+      ),
+      actor_roll_json(roll_def).stringify(),
+    ),
+  )
+  let winner = if roll_atk.total > roll_def.total {
+    Some(attacker)
+  } else if roll_def.total > roll_atk.total {
+    Some(defender)
+  } else {
+    None
+  }
+  let margin = if roll_atk.total >= roll_def.total {
+    roll_atk.total - roll_def.total
+  } else {
+    roll_def.total - roll_atk.total
+  }
+  ignore(
+    append_event(
+      db,
+      session.id,
+      "contest",
+      None,
+      None,
+      match winner {
+        Some(name) =>
+          "対抗判定 \{attacker}(\{roll_atk.total}) vs \{defender}(\{roll_def.total}) -> \{name} / margin=\{margin}"
+        None =>
+          "対抗判定 \{attacker}(\{roll_atk.total}) vs \{defender}(\{roll_def.total}) -> tie"
+      },
+      Json::object({
+        "actor_a": actor_roll_json(roll_atk),
+        "actor_b": actor_roll_json(roll_def),
+        "winner": match winner {
+          Some(value) => Json::string(value)
+          None => Json::null()
+        },
+        "margin": j_int(margin),
+      }).stringify(),
+    ),
+  )
+  let defender_next = if winner == Some(attacker) {
+    let damage = eval_dice(damage_expr)
+    let next_hp = clamp_int(row_def.hp_cur - damage.total, 0, row_def.hp_max)
+    execute_bound(db, "UPDATE statuses SET hp_cur = ? WHERE character_id = ?", [
+      int_value(next_hp),
+      int_value(row_def.id),
+    ])
+    ignore(
+      append_event(
+        db,
+        session.id,
+        "hp",
+        Some(attacker),
+        Some(defender),
+        "\{attacker} deals \{damage.total} to \{defender}",
+        Json::object({
+          "damage_expr": Json::string(damage_expr),
+          "damage_total": j_int(damage.total),
+          "hp_cur": j_int(next_hp),
+          "hp_max": j_int(row_def.hp_max),
+        }).stringify(),
+      ),
+    )
+    next_hp
+  } else {
+    row_def.hp_cur
+  }
+  let attack_text = match winner {
+    Some(name) if name == attacker =>
+      "\{attacker} attacks \{defender} -> hit / defender HP \{row_def.hp_cur} -> \{defender_next}"
+    Some(_) => "\{attacker} attacks \{defender} -> blocked"
+    None => "\{attacker} attacks \{defender} -> tie"
+  }
+  let event_id = append_event(
+    db,
+    session.id,
+    "attack",
+    Some(attacker),
+    Some(defender),
+    attack_text,
+    Json::object({
+      "attacker": actor_roll_json(roll_atk),
+      "defender": actor_roll_json(roll_def),
+      "winner": match winner {
+        Some(value) => Json::string(value)
+        None => Json::null()
+      },
+      "margin": j_int(margin),
+      "damage_expr": Json::string(damage_expr),
+      "defender_hp": j_int(defender_next),
+    }).stringify(),
+  )
+  let json = Json::object({
+    "command": "attack",
+    "attacker": actor_roll_json(roll_atk),
+    "defender": actor_roll_json(roll_def),
+    "winner": match winner {
+      Some(value) => Json::string(value)
+      None => Json::null()
+    },
+    "margin": j_int(margin),
+    "damage_expr": Json::string(damage_expr),
+    "defender_hp": j_int(defender_next),
+    "event_id": j_int(event_id),
+  })
+  output_success({ json, human: attack_text, stderr: attack_text }, global)
+}
+
+///|
+fn contest_context_text(
+  context : String?,
+  actor_a : String,
+  actor_b : String,
+) -> String? {
+  match context {
+    Some(value) if !value.is_empty() =>
+      Some("\{value} / contest \{actor_a} vs \{actor_b}")
+    _ => Some("contest \{actor_a} vs \{actor_b}")
   }
 }

@@ -142,6 +142,23 @@ fn exec_sql(db : @sqlite.Database, sql : String) -> Unit raise TrpgFailure {
 }
 
 ///|
+fn table_has_column(
+  db : @sqlite.Database,
+  table_name : String,
+  column_name : String,
+) -> Bool raise TrpgFailure {
+  let stmt = prepare(db, "PRAGMA table_info(\{table_name})")
+  let mut found = false
+  while stmt.step() {
+    if column_string(stmt, 1) == column_name {
+      found = true
+    }
+  }
+  finish_statement(stmt)
+  found
+}
+
+///|
 fn prepare(
   db : @sqlite.Database,
   sql : String,
@@ -186,9 +203,17 @@ fn migrate(db : @sqlite.Database) -> Unit raise TrpgFailure {
     #|  scenario_id TEXT NOT NULL,
     #|  started_at_ms INTEGER NOT NULL,
     #|  current_scene TEXT NOT NULL,
-    #|  is_active INTEGER NOT NULL DEFAULT 1
+    #|  is_active INTEGER NOT NULL DEFAULT 1,
+    #|  ended_at_ms INTEGER,
+    #|  outcome TEXT
     #|);
   exec_sql(db, create_sessions)
+  if !table_has_column(db, "sessions", "ended_at_ms") {
+    exec_sql(db, "ALTER TABLE sessions ADD COLUMN ended_at_ms INTEGER")
+  }
+  if !table_has_column(db, "sessions", "outcome") {
+    exec_sql(db, "ALTER TABLE sessions ADD COLUMN outcome TEXT")
+  }
   let create_active_index =
     #|CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_one_active
     #|ON sessions(is_active) WHERE is_active = 1;
@@ -245,13 +270,31 @@ fn migrate(db : @sqlite.Database) -> Unit raise TrpgFailure {
     #|  PRIMARY KEY(session_id, key)
     #|);
   exec_sql(db, create_scenes)
-  exec_sql(db, "PRAGMA user_version = 1")
+  let create_events =
+    #|CREATE TABLE IF NOT EXISTS events (
+    #|  id INTEGER PRIMARY KEY AUTOINCREMENT,
+    #|  session_id INTEGER NOT NULL,
+    #|  kind TEXT NOT NULL,
+    #|  actor TEXT,
+    #|  subject TEXT,
+    #|  text TEXT NOT NULL,
+    #|  data_json TEXT NOT NULL,
+    #|  created_at_ms INTEGER NOT NULL
+    #|);
+  exec_sql(db, create_events)
+  exec_sql(
+    db, "CREATE INDEX IF NOT EXISTS idx_events_session_created ON events(session_id, created_at_ms, id)",
+  )
+  exec_sql(
+    db, "CREATE INDEX IF NOT EXISTS idx_events_session_kind_created ON events(session_id, kind, created_at_ms, id)",
+  )
+  exec_sql(db, "PRAGMA user_version = 2")
 }
 
 ///|
 fn active_session(db : @sqlite.Database) -> SessionRow? raise TrpgFailure {
   let stmt = prepare(
-    db, "SELECT id, scenario_id, started_at_ms, current_scene FROM sessions WHERE is_active = 1 LIMIT 1",
+    db, "SELECT id, scenario_id, started_at_ms, current_scene, is_active, ended_at_ms, outcome FROM sessions WHERE is_active = 1 LIMIT 1",
   )
   let result = if stmt.step() {
     Some({
@@ -259,6 +302,39 @@ fn active_session(db : @sqlite.Database) -> SessionRow? raise TrpgFailure {
       scenario_id: column_string(stmt, 1),
       started_at_ms: column_int64(stmt, 2),
       current_scene: column_string(stmt, 3),
+      is_active: stmt.column_int(4) == 1,
+      ended_at_ms: match stmt.column(5) {
+        Int64(value) => Some(value)
+        Int(value) => Some(value.to_int64())
+        _ => None
+      },
+      outcome: column_opt_string(stmt, 6),
+    })
+  } else {
+    None
+  }
+  finish_statement(stmt)
+  result
+}
+
+///|
+fn latest_session(db : @sqlite.Database) -> SessionRow? raise TrpgFailure {
+  let stmt = prepare(
+    db, "SELECT id, scenario_id, started_at_ms, current_scene, is_active, ended_at_ms, outcome FROM sessions ORDER BY id DESC LIMIT 1",
+  )
+  let result = if stmt.step() {
+    Some({
+      id: stmt.column_int(0),
+      scenario_id: column_string(stmt, 1),
+      started_at_ms: column_int64(stmt, 2),
+      current_scene: column_string(stmt, 3),
+      is_active: stmt.column_int(4) == 1,
+      ended_at_ms: match stmt.column(5) {
+        Int64(value) => Some(value)
+        Int(value) => Some(value.to_int64())
+        _ => None
+      },
+      outcome: column_opt_string(stmt, 6),
     })
   } else {
     None
@@ -370,6 +446,38 @@ fn append_log(
       int_value(session_id),
       text_value(actor),
       text_value(text),
+      int64_value(now_ms()),
+    ],
+  )
+  db.last_insert_rowid().to_int()
+}
+
+///|
+fn append_event(
+  db : @sqlite.Database,
+  session_id : Int,
+  kind : String,
+  actor : String?,
+  subject : String?,
+  text : String,
+  data_json : String,
+) -> Int raise TrpgFailure {
+  execute_bound(
+    db,
+    "INSERT INTO events (session_id, kind, actor, subject, text, data_json, created_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [
+      int_value(session_id),
+      text_value(kind),
+      match actor {
+        Some(value) => text_value(value)
+        None => @sqlite.SqlValue::Null
+      },
+      match subject {
+        Some(value) => text_value(value)
+        None => @sqlite.SqlValue::Null
+      },
+      text_value(text),
+      text_value(data_json),
       int64_value(now_ms()),
     ],
   )
@@ -513,6 +621,62 @@ fn recent_rolls(
       outcome: column_string(stmt, 4),
       rolled_by: column_opt_string(stmt, 5),
       context: column_opt_string(stmt, 6),
+      created_at_ms: column_int64(stmt, 7),
+    })
+  }
+  finish_statement(stmt)
+  rows.rev()
+}
+
+///|
+fn recent_events(
+  db : @sqlite.Database,
+  session_id : Int,
+  limit : Int,
+) -> Array[EventRow] raise TrpgFailure {
+  list_events(db, session_id, None, None, limit)
+}
+
+///|
+fn list_events(
+  db : @sqlite.Database,
+  session_id : Int,
+  kind : String?,
+  actor : String?,
+  limit : Int,
+) -> Array[EventRow] raise TrpgFailure {
+  let sql = match (kind, actor) {
+    (Some(_), Some(_)) =>
+      "SELECT id, session_id, kind, actor, subject, text, data_json, created_at_ms FROM events WHERE session_id = ? AND kind = ? AND actor = ? ORDER BY id DESC LIMIT ?"
+    (Some(_), None) =>
+      "SELECT id, session_id, kind, actor, subject, text, data_json, created_at_ms FROM events WHERE session_id = ? AND kind = ? ORDER BY id DESC LIMIT ?"
+    (None, Some(_)) =>
+      "SELECT id, session_id, kind, actor, subject, text, data_json, created_at_ms FROM events WHERE session_id = ? AND actor = ? ORDER BY id DESC LIMIT ?"
+    (None, None) =>
+      "SELECT id, session_id, kind, actor, subject, text, data_json, created_at_ms FROM events WHERE session_id = ? ORDER BY id DESC LIMIT ?"
+  }
+  let stmt = prepare(db, sql)
+  let values : Array[@sqlite.SqlValue] = [int_value(session_id)]
+  match kind {
+    Some(value) => values.push(text_value(value))
+    None => ()
+  }
+  match actor {
+    Some(value) => values.push(text_value(value))
+    None => ()
+  }
+  values.push(int_value(limit))
+  stmt.bind_all(values) |> ignore
+  let rows : Array[EventRow] = []
+  while stmt.step() {
+    rows.push({
+      id: stmt.column_int(0),
+      session_id: stmt.column_int(1),
+      kind: column_string(stmt, 2),
+      actor: column_opt_string(stmt, 3),
+      subject: column_opt_string(stmt, 4),
+      text: column_string(stmt, 5),
+      data_json: column_string(stmt, 6),
       created_at_ms: column_int64(stmt, 7),
     })
   }

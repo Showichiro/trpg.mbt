@@ -11,6 +11,7 @@ struct GlobalArgs {
   human : Bool
   quiet : Bool
   describe : Bool
+  help : Bool
 }
 
 ///|
@@ -26,6 +27,9 @@ struct SessionRow {
   scenario_id : String
   started_at_ms : Int64
   current_scene : String
+  is_active : Bool
+  ended_at_ms : Int64?
+  outcome : String?
 }
 
 ///|
@@ -60,6 +64,18 @@ struct RollRow {
 }
 
 ///|
+struct EventRow {
+  id : Int
+  session_id : Int
+  kind : String
+  actor : String?
+  subject : String?
+  text : String
+  data_json : String
+  created_at_ms : Int64
+}
+
+///|
 struct HistoryEntry {
   created_at_ms : Int64
   sort_order : Int
@@ -68,8 +84,10 @@ struct HistoryEntry {
 
 ///|
 struct ModifierPreviewRow {
+  kind : String
   name : String
   amount : Int
+  tags : Array[String]
   uses : Int?
   duration : String?
   on_trigger : String?
@@ -82,8 +100,32 @@ struct RollPreview {
   base_stat : Int
   auto_total : Int
   modifiers : Array[ModifierPreviewRow]
-  manual_traits : Array[String]
   inventory : Array[String]
+}
+
+///|
+struct ActorRollRow {
+  actor : String
+  ability : String
+  base_stat : Int
+  bonus : Int
+  modifier_total : Int
+  target : Int?
+  expr : String
+  total : Int
+  rolls : Array[Int]
+  outcome : String
+  modifiers : Array[ModifierPreviewRow]
+  consumed_statuses : Array[String]
+  scene_warning : String?
+}
+
+///|
+struct GoalStatusRow {
+  id : String
+  outcome : String
+  satisfied : Bool
+  summary : String
 }
 
 ///|

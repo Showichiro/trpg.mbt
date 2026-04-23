@@ -77,6 +77,22 @@ fn json_int_field(json : Json, key : String, fallback : Int) -> Int {
 }
 
 ///|
+fn json_array_field(json : Json, key : String) -> Array[Json] {
+  match json_get(json, key) {
+    Some(Array(items)) => items
+    _ => []
+  }
+}
+
+///|
+fn json_object_field(json : Json, key : String) -> Map[String, Json] {
+  match json_get(json, key) {
+    Some(Object(object)) => object
+    _ => {}
+  }
+}
+
+///|
 fn json_string_opt_field(json : Json, key : String) -> String? {
   match json_get(json, key) {
     Some(value) => json_string(value)

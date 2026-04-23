@@ -8,6 +8,13 @@ fn history_from_log(row : LogRow) -> HistoryEntry {
 }
 
 ///|
+fn history_from_event(row : EventRow) -> HistoryEntry {
+  ignore(row.session_id)
+  ignore(row.subject)
+  { created_at_ms: row.created_at_ms, sort_order: row.id, text: row.text }
+}
+
+///|
 fn history_from_roll(row : RollRow) -> HistoryEntry {
   let actor = row.rolled_by.unwrap_or("gm")
   let target_text = match row.target {
@@ -83,10 +90,15 @@ fn recent_history(
   session_id : Int,
   limit : Int,
 ) -> Array[HistoryEntry] raise TrpgFailure {
-  let logs = recent_logs(db, session_id, limit).map(history_from_log)
-  let rolls = recent_rolls(db, session_id, limit).map(history_from_roll)
-  let merged = merge_history_entries(logs, rolls)
-  take_last_history(merged, limit)
+  let events = recent_events(db, session_id, limit)
+  if events.length() > 0 {
+    events.map(history_from_event)
+  } else {
+    let logs = recent_logs(db, session_id, limit).map(history_from_log)
+    let rolls = recent_rolls(db, session_id, limit).map(history_from_roll)
+    let merged = merge_history_entries(logs, rolls)
+    take_last_history(merged, limit)
+  }
 }
 
 ///|

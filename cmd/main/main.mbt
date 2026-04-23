@@ -25,6 +25,9 @@ fn main {
 fn run(argv : Array[String]) -> RunResult {
   try {
     let global = parse_global_flags(argv)
+    if global.help {
+      return help_output(global)
+    }
     if global.describe {
       return json_success(
         describe_commands_json(),
@@ -48,6 +51,8 @@ fn run(argv : Array[String]) -> RunResult {
       "session" => dispatch_session(global)
       "pc" => dispatch_pc(global)
       "roll" => dispatch_roll(global)
+      "contest" => dispatch_contest(global)
+      "attack" => dispatch_attack(global)
       "hp" => dispatch_hp(global)
       "status" => dispatch_status(global)
       "item" => dispatch_item(global)

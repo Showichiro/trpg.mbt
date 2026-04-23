@@ -128,32 +128,13 @@ fn compose_gm_prompt(
   format_history_for_prompt(history) +
   "\n\n" +
   "## GM 手順\n" +
-  "- 判定が必要なときは `trpg roll 2d6+修正値 --target N --as 名前 --context \"状況\"` を実行し、JSON の `outcome` を引用する。\n" +
+  "- 判定が必要なときは `trpg roll 名前 --stat tech --scene-default --tags lockpick --context \"状況\"` のように actor-aware roll を使い、JSON の `outcome` を引用する。\n" +
   "- HP 変動は `trpg hp 名前 -3 --context \"理由\"` のように CLI で更新する。\n" +
-  "- 状態は `trpg status 名前 add 毒 --note \"効果量/継続条件/消費トリガー\"` のように CLI で更新する。\n" +
+  "- 状態は `trpg status 名前 add 毒 --note \"効果量/継続条件/消費トリガー\" --modifier tech:-2 --uses 1 --on-trigger consume` のように CLI で更新する。\n" +
   "- シーン転換時は `trpg session scene <id> [--note \"変化\"]` を使う。\n" +
   "- アイテム獲得・喪失は `trpg item give/drop 名前 アイテム名 [--note \"理由\"]` を使う。\n" +
+  "- NPC の対抗判定は `trpg contest`、攻撃は `trpg attack` を使う。\n" +
   "- 描写の最後に、次に行動する相手を明示して「あなたの番です」と振る。"
-}
-
-///|
-fn current_scene_description(scenario : Json, key : String) -> String {
-  match json_get(scenario, "scenes") {
-    Some(Object(scenes)) =>
-      match scenes.get(key) {
-        Some(scene) => {
-          let desc = json_string_field(scene, "description", "")
-          let hint = json_string_field(scene, "difficulty_hint", "")
-          if hint.is_empty() {
-            desc
-          } else {
-            desc + "\n難易度目安: " + hint
-          }
-        }
-        None => ""
-      }
-    _ => ""
-  }
 }
 
 ///|

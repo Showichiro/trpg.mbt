@@ -37,14 +37,31 @@ fn parse_modifier_spec(spec : String) -> (String, Int) raise TrpgFailure {
 }
 
 ///|
-fn normalize_modifier_spec(spec : String) -> String raise TrpgFailure {
-  let (ability, amount) = parse_modifier_spec(spec)
-  let amount_text = if amount >= 0 {
-    "+" + amount.to_string()
-  } else {
-    amount.to_string()
+fn parse_tags_csv(source : String?) -> Array[String] {
+  match source {
+    Some(text) => {
+      let tags : Array[String] = []
+      for chunk in text.split(",") {
+        let tag = chunk.trim().to_string()
+        if !tag.is_empty() && !string_array_contains(tags, tag) {
+          tags.push(tag)
+        }
+      }
+      tags
+    }
+    None => []
   }
-  ability + ":" + amount_text
+}
+
+///|
+fn string_array_contains(items : Array[String], target : String) -> Bool {
+  let mut found = false
+  for item in items {
+    if item == target {
+      found = true
+    }
+  }
+  found
 }
 
 ///|
@@ -61,64 +78,6 @@ fn parse_sheet_object(
           Some("check the character sheet structure"),
         ),
       )
-  }
-}
-
-///|
-fn inventory_contains(items : Array[String], target : String) -> Bool {
-  let mut found = false
-  for item in items {
-    if item == target {
-      found = true
-    }
-  }
-  found
-}
-
-///|
-fn inventory_from_sheet_json(
-  source : String,
-) -> Array[String] raise TrpgFailure {
-  let sheet = parse_sheet_object(source, "sheet_json")
-  match sheet.get("inventory") {
-    Some(Array(items)) => {
-      let out : Array[String] = []
-      for item in items {
-        match item {
-          String(value) => out.push(value)
-          _ => ()
-        }
-      }
-      out
-    }
-    _ => []
-  }
-}
-
-///|
-fn traits_from_sheet_json(source : String) -> Array[String] raise TrpgFailure {
-  let sheet = parse_sheet_object(source, "sheet_json")
-  match sheet.get("traits") {
-    Some(Array(items)) => {
-      let out : Array[String] = []
-      for item in items {
-        match item {
-          Object(object) => {
-            let name = json_string_field(Json::object(object), "name", "trait")
-            let desc = json_string_field(Json::object(object), "desc", "")
-            if desc.is_empty() {
-              out.push(name)
-            } else {
-              out.push("\{name}: \{desc}")
-            }
-          }
-          String(value) => out.push(value)
-          _ => ()
-        }
-      }
-      out
-    }
-    _ => []
   }
 }
 
@@ -140,13 +99,391 @@ fn stat_from_sheet_json(
 }
 
 ///|
+fn object_name(value : Json, fallback : String) -> String {
+  json_string_field(value, "name", fallback)
+}
+
+///|
+fn item_objects_from_sheet_json(
+  source : String,
+) -> Array[Json] raise TrpgFailure {
+  let sheet = parse_sheet_object(source, "sheet_json")
+  match sheet.get("inventory") {
+    Some(Array(items)) => {
+      let out : Array[Json] = []
+      for item in items {
+        match item {
+          Object(object) => out.push(Json::object(object))
+          String(value) =>
+            out.push(
+              Json::object({
+                "id": Json::string(value),
+                "name": Json::string(value),
+                "effects": Json::array([]),
+              }),
+            )
+          _ => ()
+        }
+      }
+      out
+    }
+    _ => []
+  }
+}
+
+///|
+fn trait_objects_from_sheet_json(
+  source : String,
+) -> Array[Json] raise TrpgFailure {
+  let sheet = parse_sheet_object(source, "sheet_json")
+  match sheet.get("traits") {
+    Some(Array(items)) => {
+      let out : Array[Json] = []
+      for item in items {
+        match item {
+          Object(object) => out.push(Json::object(object))
+          String(value) =>
+            out.push(
+              Json::object({
+                "id": Json::string(value),
+                "name": Json::string(value),
+                "effects": Json::array([]),
+              }),
+            )
+          _ => ()
+        }
+      }
+      out
+    }
+    _ => []
+  }
+}
+
+///|
+fn inventory_from_sheet_json(
+  source : String,
+) -> Array[String] raise TrpgFailure {
+  item_objects_from_sheet_json(source).map(item => object_name(item, "item"))
+}
+
+///|
+fn effect_tags(effect : Json) -> Array[String] {
+  json_string_array_field(effect, "tags")
+}
+
+///|
+fn effect_matches(
+  effect : Json,
+  ability : String,
+  requested_tags : Array[String],
+) -> Bool raise TrpgFailure {
+  let effect_stat = normalize_ability(
+    json_string_field(effect, "stat", ability),
+  )
+  if effect_stat != ability {
+    false
+  } else {
+    let tags = effect_tags(effect)
+    if tags.length() == 0 || string_array_contains(tags, "all") {
+      true
+    } else if requested_tags.length() == 0 {
+      false
+    } else {
+      let mut matched = false
+      for tag in requested_tags {
+        if string_array_contains(tags, tag) {
+          matched = true
+        }
+      }
+      matched
+    }
+  }
+}
+
+///|
+fn effect_preview_row(
+  kind : String,
+  name : String,
+  effect : Json,
+  note : String,
+  uses : Int?,
+  duration : String?,
+  on_trigger : String?,
+  ability : String,
+  tags : Array[String],
+) -> ModifierPreviewRow? raise TrpgFailure {
+  if effect_matches(effect, ability, tags) {
+    Some({
+      kind,
+      name,
+      amount: json_int_field(effect, "amount", 0),
+      tags: effect_tags(effect),
+      uses,
+      duration,
+      on_trigger,
+      note,
+    })
+  } else {
+    None
+  }
+}
+
+///|
+fn trait_modifiers(
+  source : String,
+  ability : String,
+  tags : Array[String],
+) -> Array[ModifierPreviewRow] raise TrpgFailure {
+  let rows : Array[ModifierPreviewRow] = []
+  for trait_row in trait_objects_from_sheet_json(source) {
+    let name = object_name(trait_row, "trait")
+    let note = json_string_field(trait_row, "desc", "")
+    for effect in json_array_field(trait_row, "effects") {
+      match
+        effect_preview_row(
+          "trait",
+          name,
+          effect,
+          note,
+          None,
+          None,
+          None,
+          ability,
+          tags,
+        ) {
+        Some(row) => rows.push(row)
+        None => ()
+      }
+    }
+  }
+  rows
+}
+
+///|
+fn item_modifiers(
+  source : String,
+  ability : String,
+  tags : Array[String],
+) -> Array[ModifierPreviewRow] raise TrpgFailure {
+  let rows : Array[ModifierPreviewRow] = []
+  for item in item_objects_from_sheet_json(source) {
+    let name = object_name(item, "item")
+    let note = json_string_field(item, "desc", "")
+    for effect in json_array_field(item, "effects") {
+      match
+        effect_preview_row(
+          "item",
+          name,
+          effect,
+          note,
+          None,
+          None,
+          None,
+          ability,
+          tags,
+        ) {
+        Some(row) => rows.push(row)
+        None => ()
+      }
+    }
+  }
+  rows
+}
+
+///|
+fn legacy_status_effect(condition : Json) -> Json? raise TrpgFailure {
+  match json_string_opt_field(condition, "modifier") {
+    Some(spec) => {
+      let (ability, amount) = parse_modifier_spec(spec)
+      Some(
+        Json::object({
+          "stat": Json::string(ability),
+          "amount": j_int(amount),
+          "tags": Json::array([]),
+          "trigger": Json::string("roll"),
+        }),
+      )
+    }
+    None => None
+  }
+}
+
+///|
+fn status_modifiers(
+  source : String,
+  ability : String,
+  tags : Array[String],
+) -> Array[ModifierPreviewRow] raise TrpgFailure {
+  let rows : Array[ModifierPreviewRow] = []
+  let conditions = match parse_json(source, "conditions_json") {
+    Array(items) => items
+    _ => []
+  }
+  for condition in conditions {
+    let name = json_string_field(condition, "name", "status")
+    let note = json_string_field(condition, "note", "")
+    let uses = json_int_opt_field(condition, "uses")
+    let duration = json_string_opt_field(condition, "duration")
+    let on_trigger = json_string_opt_field(condition, "on_trigger")
+    let effects = if json_array_field(condition, "effects").length() > 0 {
+      json_array_field(condition, "effects")
+    } else {
+      match legacy_status_effect(condition) {
+        Some(effect) => [effect]
+        None => []
+      }
+    }
+    for effect in effects {
+      let trigger = json_string_field(effect, "trigger", "roll")
+      if trigger == "roll" {
+        match
+          effect_preview_row(
+            "status", name, effect, note, uses, duration, on_trigger, ability, tags,
+          ) {
+          Some(row) => rows.push(row)
+          None => ()
+        }
+      }
+    }
+  }
+  rows
+}
+
+///|
+fn matching_modifiers(
+  row : CharacterRow,
+  ability : String,
+  tags : Array[String],
+) -> Array[ModifierPreviewRow] raise TrpgFailure {
+  let all : Array[ModifierPreviewRow] = []
+  for item in trait_modifiers(row.sheet_json, ability, tags) {
+    all.push(item)
+  }
+  for item in item_modifiers(row.sheet_json, ability, tags) {
+    all.push(item)
+  }
+  for item in status_modifiers(row.conditions_json, ability, tags) {
+    all.push(item)
+  }
+  all
+}
+
+///|
+fn unique_strings(values : Array[String]) -> Array[String] {
+  let out : Array[String] = []
+  for value in values {
+    if !string_array_contains(out, value) {
+      out.push(value)
+    }
+  }
+  out
+}
+
+///|
+fn consume_statuses_json(
+  source : String,
+  consumed_names : Array[String],
+) -> String raise TrpgFailure {
+  let conditions = match parse_json(source, "conditions_json") {
+    Array(items) => items
+    _ => []
+  }
+  let counters : Map[String, Int] = {}
+  for name in consumed_names {
+    let next = match counters.get(name) {
+      Some(value) => value + 1
+      None => 1
+    }
+    counters[name] = next
+  }
+  let kept : Array[Json] = []
+  for condition in conditions {
+    let name = json_string_field(condition, "name", "")
+    let remaining = match counters.get(name) {
+      Some(value) => value
+      None => 0
+    }
+    if remaining == 0 {
+      kept.push(condition)
+    } else {
+      counters[name] = remaining - 1
+      let on_trigger = json_string_field(condition, "on_trigger", "")
+      let uses = json_int_opt_field(condition, "uses")
+      if on_trigger == "consume" {
+        match uses {
+          Some(value) if value > 1 =>
+            match condition {
+              Object(object) => {
+                object["uses"] = j_int(value - 1)
+                kept.push(Json::object(object))
+              }
+              _ => ()
+            }
+          Some(1) => ()
+          None => ()
+          _ => kept.push(condition)
+        }
+      } else {
+        kept.push(condition)
+      }
+    }
+  }
+  Json::array(kept).stringify()
+}
+
+///|
+fn effect_json(
+  ability : String,
+  amount : Int,
+  tags : Array[String],
+  trigger : String,
+) -> Json {
+  Json::object({
+    "stat": Json::string(ability),
+    "amount": j_int(amount),
+    "tags": Json::array(tags.map(value => Json::string(value))),
+    "trigger": Json::string(trigger),
+  })
+}
+
+///|
+fn make_inventory_item_json(
+  name : String,
+  desc : String?,
+  effect_spec : String?,
+  tags : Array[String],
+) -> Json raise TrpgFailure {
+  let item : Map[String, Json] = {
+    "id": Json::string(name),
+    "name": Json::string(name),
+    "effects": Json::array([]),
+  }
+  match desc {
+    Some(value) if !value.is_empty() => item["desc"] = Json::string(value)
+    _ => ()
+  }
+  match effect_spec {
+    Some(spec) => {
+      let (ability, amount) = parse_modifier_spec(spec)
+      item["effects"] = Json::array([effect_json(ability, amount, tags, "roll")])
+    }
+    None => ()
+  }
+  Json::object(item)
+}
+
+///|
 fn add_inventory_item_json(
   source : String,
   item : String,
+  desc : String?,
+  effect_spec : String?,
+  tags : Array[String],
 ) -> String raise TrpgFailure {
   let sheet = parse_sheet_object(source, "sheet_json")
-  let inventory = inventory_from_sheet_json(source)
-  if inventory_contains(inventory, item) {
+  let inventory = item_objects_from_sheet_json(source)
+  let names = inventory.map(current => object_name(current, "item"))
+  if string_array_contains(names, item) {
     fail(
       TrpgError::Conflict(
         "item already exists: \{item}",
@@ -154,8 +491,8 @@ fn add_inventory_item_json(
       ),
     )
   }
-  inventory.push(item)
-  sheet["inventory"] = Json::array(inventory.map(value => Json::string(value)))
+  inventory.push(make_inventory_item_json(item, desc, effect_spec, tags))
+  sheet["inventory"] = Json::array(inventory)
   Json::object(sheet).stringify()
 }
 
@@ -165,8 +502,17 @@ fn drop_inventory_item_json(
   item : String,
 ) -> String raise TrpgFailure {
   let sheet = parse_sheet_object(source, "sheet_json")
-  let inventory = inventory_from_sheet_json(source)
-  if !inventory_contains(inventory, item) {
+  let inventory = item_objects_from_sheet_json(source)
+  let kept : Array[Json] = []
+  let mut found = false
+  for value in inventory {
+    if object_name(value, "item") == item {
+      found = true
+    } else {
+      kept.push(value)
+    }
+  }
+  if !found {
     fail(
       TrpgError::NotFound(
         "item not found: \{item}",
@@ -174,84 +520,82 @@ fn drop_inventory_item_json(
       ),
     )
   }
-  let kept : Array[String] = []
-  for value in inventory {
-    if value != item {
-      kept.push(value)
-    }
-  }
-  sheet["inventory"] = Json::array(kept.map(value => Json::string(value)))
+  sheet["inventory"] = Json::array(kept)
   Json::object(sheet).stringify()
-}
-
-///|
-fn modifier_preview_from_condition(
-  condition : Json,
-  ability : String,
-) -> ModifierPreviewRow? raise TrpgFailure {
-  let normalized = normalize_ability(ability)
-  match condition {
-    Object(_) => {
-      let modifier_spec = json_string_opt_field(condition, "modifier")
-      match modifier_spec {
-        Some(spec) => {
-          let (modifier_ability, amount) = parse_modifier_spec(spec)
-          if modifier_ability == normalized {
-            Some({
-              name: json_string_field(condition, "name", "status"),
-              amount,
-              uses: json_int_opt_field(condition, "uses"),
-              duration: json_string_opt_field(condition, "duration"),
-              on_trigger: json_string_opt_field(condition, "on_trigger"),
-              note: json_string_field(condition, "note", ""),
-            })
-          } else {
-            None
-          }
-        }
-        None => None
-      }
-    }
-    _ => None
-  }
 }
 
 ///|
 fn roll_preview(
   row : CharacterRow,
   ability : String,
+  tags : Array[String],
 ) -> RollPreview raise TrpgFailure {
   let normalized = normalize_ability(ability)
-  let conditions = match parse_json(row.conditions_json, "conditions_json") {
-    Array(items) => items
-    _ => []
-  }
-  let modifiers : Array[ModifierPreviewRow] = []
+  let modifiers = matching_modifiers(row, normalized, tags)
   let mut auto_total = 0
-  for condition in conditions {
-    match modifier_preview_from_condition(condition, normalized) {
-      Some(preview) => {
-        auto_total += preview.amount
-        modifiers.push(preview)
-      }
-      None => ()
-    }
+  for modifier in modifiers {
+    auto_total += modifier.amount
   }
   {
     ability: normalized,
     base_stat: stat_from_sheet_json(row.sheet_json, normalized),
     auto_total,
     modifiers,
-    manual_traits: traits_from_sheet_json(row.sheet_json),
     inventory: inventory_from_sheet_json(row.sheet_json),
+  }
+}
+
+///|
+fn actor_roll(
+  row : CharacterRow,
+  ability : String,
+  bonus : Int,
+  target : Int?,
+  tags : Array[String],
+  scene_warning : String?,
+) -> ActorRollRow raise TrpgFailure {
+  let preview = roll_preview(row, ability, tags)
+  let modifier_total = preview.auto_total + bonus
+  let sign = if modifier_total > 0 {
+    "+" + modifier_total.to_string()
+  } else if modifier_total < 0 {
+    modifier_total.to_string()
+  } else {
+    ""
+  }
+  let expr = "2d6" + sign
+  let evaluated = eval_dice(expr)
+  let consumed_statuses = unique_strings(
+    preview.modifiers
+    .filter(source => {
+      source.kind == "status" && source.on_trigger == Some("consume")
+    })
+    .map(source => source.name),
+  )
+  {
+    actor: row.name,
+    ability: preview.ability,
+    base_stat: preview.base_stat,
+    bonus,
+    modifier_total,
+    target,
+    expr,
+    total: evaluated.total,
+    rolls: evaluated.rolls,
+    outcome: roll_outcome(evaluated.total, target),
+    modifiers: preview.modifiers,
+    consumed_statuses,
+    scene_warning,
   }
 }
 
 ///|
 fn modifier_preview_json(row : ModifierPreviewRow) -> Json {
   let object : Map[String, Json] = {
+    "kind": Json::string(row.kind),
     "name": Json::string(row.name),
     "amount": j_int(row.amount),
+    "tags": Json::array(row.tags.map(value => Json::string(value))),
     "note": Json::string(row.note),
   }
   match row.uses {
@@ -277,13 +621,38 @@ fn roll_preview_json(preview : RollPreview) -> Json {
     "auto_modifier_total": j_int(preview.auto_total),
     "total_with_auto": j_int(preview.base_stat + preview.auto_total),
     "auto_modifiers": Json::array(preview.modifiers.map(modifier_preview_json)),
-    "manual_traits": Json::array(
-      preview.manual_traits.map(value => Json::string(value)),
-    ),
     "inventory": Json::array(
       preview.inventory.map(value => Json::string(value)),
     ),
   })
+}
+
+///|
+fn actor_roll_json(row : ActorRollRow) -> Json {
+  let object : Map[String, Json] = {
+    "actor": Json::string(row.actor),
+    "ability": Json::string(row.ability),
+    "base_stat": j_int(row.base_stat),
+    "bonus": j_int(row.bonus),
+    "modifier_total": j_int(row.modifier_total),
+    "expr": Json::string(row.expr),
+    "total": j_int(row.total),
+    "rolls": json_int_array(row.rolls),
+    "outcome": Json::string(row.outcome),
+    "sources": Json::array(row.modifiers.map(modifier_preview_json)),
+    "consumed_statuses": Json::array(
+      row.consumed_statuses.map(value => Json::string(value)),
+    ),
+  }
+  match row.target {
+    Some(value) => object["target"] = j_int(value)
+    None => object["target"] = Json::null()
+  }
+  match row.scene_warning {
+    Some(value) => object["scene_warning"] = Json::string(value)
+    None => ()
+  }
+  Json::object(object)
 }
 
 ///|
@@ -293,7 +662,15 @@ fn format_modifier_preview(row : ModifierPreviewRow) -> String {
   } else {
     row.amount.to_string()
   }
-  let parts : Array[String] = ["\{row.name} \{amount_text}"]
+  let tags_text = if row.tags.length() == 0 {
+    ""
+  } else {
+    "tags=" + row.tags.join(",")
+  }
+  let parts : Array[String] = ["[\{row.kind}] \{row.name} \{amount_text}"]
+  if !tags_text.is_empty() {
+    parts.push(tags_text)
+  }
   match row.uses {
     Some(value) => parts.push("uses=\{value}")
     None => ()
@@ -322,12 +699,7 @@ fn format_roll_preview(name : String, preview : RollPreview) -> String {
   let modifier_lines = if preview.modifiers.length() == 0 {
     "(なし)"
   } else {
-    preview.modifiers.map(format_modifier_preview).join("\n- ")
-  }
-  let traits = if preview.manual_traits.length() == 0 {
-    "(なし)"
-  } else {
-    preview.manual_traits.join("\n- ")
+    "- " + preview.modifiers.map(format_modifier_preview).join("\n- ")
   }
   let inventory = if preview.inventory.length() == 0 {
     "(なし)"
@@ -338,10 +710,36 @@ fn format_roll_preview(name : String, preview : RollPreview) -> String {
   "能力値: \{preview.base_stat}\n" +
   "自動修正合計: \{auto_total_text}\n" +
   "合計(能力値+自動修正): \{preview.base_stat + preview.auto_total}\n" +
-  "自動修正:\n- " +
+  "自動修正:\n" +
   modifier_lines +
-  "\n手動判断の trait:\n- " +
-  traits +
   "\n所持品: " +
   inventory
+}
+
+///|
+fn format_actor_roll(row : ActorRollRow) -> String {
+  let target_text = match row.target {
+    Some(value) => " / target=\{value}"
+    None => ""
+  }
+  let warning_text = match row.scene_warning {
+    Some(value) if !value.is_empty() => "\nwarning: \{value}"
+    _ => ""
+  }
+  let sources = if row.modifiers.length() == 0 {
+    "(なし)"
+  } else {
+    "- " + row.modifiers.map(format_modifier_preview).join("\n- ")
+  }
+  let consumed = if row.consumed_statuses.length() == 0 {
+    "(なし)"
+  } else {
+    row.consumed_statuses.join(", ")
+  }
+  "\{row.actor} \{row.expr} = \{row.total}\{target_text} / \{row.outcome}\n" +
+  "sources:\n" +
+  sources +
+  "\nconsumed_statuses: " +
+  consumed +
+  warning_text
 }

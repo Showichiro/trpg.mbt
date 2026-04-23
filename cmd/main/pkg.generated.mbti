@@ -11,13 +11,19 @@ import {
 type TrpgFailure
 
 // Types and methods
+type ActorRollRow
+
 type CharacterRow
 
 type CliOutput
 
 type DiceTerm
 
+type EventRow
+
 type GlobalArgs
+
+type GoalStatusRow
 
 type HistoryEntry
 

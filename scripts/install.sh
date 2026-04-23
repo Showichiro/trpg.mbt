@@ -6,11 +6,11 @@ install_dir="${HOME}/.local/bin"
 trpg_home="${TRPG_HOME:-${HOME}/.trpg}"
 
 cd "$repo_dir"
-moon build --target native
+moon build cmd/main --target native --release --strip
 
-bin_path="$repo_dir/_build/native/debug/build/cmd/main/main.exe"
+bin_path="$repo_dir/_build/native/release/build/cmd/main/main.exe"
 if [ ! -x "$bin_path" ]; then
-  bin_path="$repo_dir/_build/native/debug/build/cmd/main/main"
+  bin_path="$repo_dir/_build/native/release/build/cmd/main/main"
 fi
 if [ ! -x "$bin_path" ]; then
   echo "install.sh: built binary was not found" >&2
