@@ -1,0 +1,18 @@
+import {
+  "mizchi/sqlite" @sqlite,
+  "moonbitlang/core/encoding/utf8" @utf8,
+  "moonbitlang/core/env" @env,
+  "moonbitlang/core/json" @json,
+  "moonbitlang/core/random" @random,
+  "moonbitlang/core/string" @string,
+  "moonbitlang/x/fs" @fs,
+  "moonbitlang/x/sys" @sys,
+}
+
+supported_targets = "native"
+
+options(
+  "is-main": true,
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
+  "native-stub": [ "stub.c" ],
+)

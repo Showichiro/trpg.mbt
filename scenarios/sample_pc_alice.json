@@ -1,0 +1,11 @@
+{
+  "name": "alice",
+  "class": "盗賊",
+  "stats": { "body": 1, "tech": 2, "mind": 0 },
+  "hp_max": 8,
+  "traits": [
+    { "name": "錠開け", "desc": "解錠・罠解除の技判定で +1 (GM 判断)" },
+    { "name": "夜目", "desc": "暗所での不利を受けにくい" }
+  ],
+  "inventory": ["短剣", "ランタン", "縄"]
+}

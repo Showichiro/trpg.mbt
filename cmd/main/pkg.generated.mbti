@@ -1,0 +1,43 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Showichiro/trpg/cmd/main"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+type TrpgFailure
+
+// Types and methods
+type CharacterRow
+
+type CliOutput
+
+type DiceTerm
+
+type GlobalArgs
+
+type HistoryEntry
+
+type LogRow
+
+type ModifierPreviewRow
+
+type RollEval
+
+type RollPreview
+
+type RollRow
+
+type RunResult
+
+type SessionRow
+
+type TrpgError derive(@debug.Debug)
+
+// Type aliases
+
+// Traits
+

@@ -1,0 +1,43 @@
+{
+  "id": "forgotten_library",
+  "title": "忘れられた図書館の鍵",
+  "summary": "三百年前に封じられた魔導書の鍵を、朽ちかけた図書館から取り戻す。",
+  "party_setup": {
+    "solo_friendly": true,
+    "recommended_party_size": { "min": 1, "max": 2 },
+    "default_participants": {
+      "1": ["alice"],
+      "2": ["alice", "orion"]
+    },
+    "sample_pcs": ["alice", "orion"]
+  },
+  "opening_scene": "entrance",
+  "scenes": {
+    "entrance": {
+      "description": "苔むした入口。床には古い魔法陣の残滓があり、重い扉の奥から湿った紙の匂いが漂う。",
+      "difficulty_hint": "体 9"
+    },
+    "librarian": {
+      "description": "蔵書の間には司書の亡霊が佇む。彼女は失われた貸出記録を守り、来訪者の意図を見定めようとする。",
+      "difficulty_hint": "心 9"
+    },
+    "seal": {
+      "description": "地下書庫の石棺には複雑な魔法紋様が刻まれている。鍵は封印の中心で淡く脈打っている。",
+      "difficulty_hint": "技 11"
+    }
+  },
+  "npcs": [
+    {
+      "name": "司書の亡霊",
+      "kind": "npc",
+      "sheet": {
+        "name": "司書の亡霊",
+        "class": "亡霊",
+        "stats": { "body": 0, "tech": 1, "mind": 2 },
+        "hp_max": 8,
+        "traits": [],
+        "inventory": []
+      }
+    }
+  ]
+}
