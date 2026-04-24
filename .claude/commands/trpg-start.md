@@ -2,7 +2,12 @@
 description: Coding Agent TRPG を開始する
 ---
 
-TRPG GM skill を使って `forgotten_library` を扱ってください。
+TRPG GM skill を使って TRPG を開始してください。
+
+- ユーザが scenario id を指定したらそれを使ってください。
+- ユーザが scenario の URL またはローカル path を渡したら、先に `trpg scenario import <url-or-path>` を実行してください。
+- scenario が未指定なら `trpg scenario list` を確認し、候補が 1 件だけならそれを使い、複数あるならユーザに確認してください。
+- 特に指定が無いときだけ `forgotten_library` を既定シナリオとして扱って構いません。
 
 - active session がある場合は、そのまま再開してください。
 - active session が無い場合は、**最初に参加人数と参加 PC を確認してください**。

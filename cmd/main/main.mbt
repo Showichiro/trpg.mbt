@@ -2,7 +2,7 @@
 const VERSION : String = "0.1.0"
 
 ///|
-fn main {
+async fn main {
   let args = @env.args()
   let argv = if args.length() > 1 { args[1:].to_array() } else { [] }
   let result = run(argv)
@@ -22,7 +22,7 @@ fn main {
 }
 
 ///|
-fn run(argv : Array[String]) -> RunResult {
+async fn run(argv : Array[String]) -> RunResult {
   try {
     let global = parse_global_flags(argv)
     if global.help {

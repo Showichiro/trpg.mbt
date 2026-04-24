@@ -165,6 +165,7 @@ fn positional_args(args : Array[String]) -> Array[String] {
     if option_takes_value(arg) {
       i += 2
     } else if arg == "--if-not-exists" ||
+      arg == "--force" ||
       arg == "--brief" ||
       arg == "--prep" ||
       arg == "--scene-default" ||

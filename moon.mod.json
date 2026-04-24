@@ -3,12 +3,18 @@
   "version": "0.1.0",
   "deps": {
     "mizchi/sqlite": "0.2.4",
-    "moonbitlang/x": "0.4.40"
+    "moonbitlang/x": "0.4.40",
+    "moonbitlang/async": "0.18.1"
   },
   "readme": "README.mbt.md",
   "repository": "https://github.com/Showichiro/trpg.mbt",
   "license": "Apache-2.0",
-  "keywords": ["trpg", "cli", "moonbit", "coding-agent"],
+  "keywords": [
+    "trpg",
+    "cli",
+    "moonbit",
+    "coding-agent"
+  ],
   "description": "Agent-friendly TRPG state manager CLI",
   "preferred-target": "native"
 }

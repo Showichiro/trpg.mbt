@@ -103,8 +103,17 @@ fn describe_commands_json() -> Json {
       "scenario.show": command_descriptor(
         "シナリオ定義を表示する", "trpg scenario show <scenario_id>",
       ),
+      "scenario.list": command_descriptor(
+        "インストール済みシナリオを一覧表示する", "trpg scenario list",
+      ),
+      "scenario.import": command_descriptor(
+        "URL またはローカル path からシナリオを取り込む", "trpg scenario import <url-or-path> [--force]",
+      ),
+      "scenario.remove": command_descriptor(
+        "インストール済みシナリオを削除する", "trpg scenario remove <scenario_id>",
+      ),
       "scenario.validate": command_descriptor(
-        "シナリオ定義を検証する", "trpg scenario validate <scenario_id>",
+        "シナリオ定義を検証する", "trpg scenario validate <scenario_id|path|url>",
       ),
       "prompt.gm": command_descriptor(
         "GM 用プロンプトを合成する", "trpg prompt gm [--brief] [--human]",

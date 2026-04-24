@@ -179,6 +179,28 @@ struct GoalStatusRow {
 }
 
 ///|
+struct ScenarioInstallRow {
+  id : String
+  title : String
+  summary : String
+  version : String?
+  path : String
+  origin : String
+  source_url : String?
+  installed_at_ms : Int64?
+}
+
+///|
+struct ScenarioSourceRow {
+  scenario_id : String
+  source_kind : String
+  source_label : String
+  source_text : String
+  scenario : Json
+  source_url : String?
+}
+
+///|
 struct RollEval {
   total : Int
   rolls : Array[Int]

@@ -43,6 +43,10 @@ type RollRow
 
 type RunResult
 
+type ScenarioInstallRow
+
+type ScenarioSourceRow
+
 type SceneModifierRow
 
 type SessionRow

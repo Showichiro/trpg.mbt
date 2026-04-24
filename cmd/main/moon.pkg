@@ -1,4 +1,6 @@
 import {
+  "moonbitlang/async" @async,
+  "moonbitlang/async/http" @http,
   "mizchi/sqlite" @sqlite,
   "moonbitlang/core/encoding/utf8" @utf8,
   "moonbitlang/core/env" @env,

@@ -2534,45 +2534,105 @@ fn save_scene_state_object(
 }
 
 ///|
-fn dispatch_scenario(global : GlobalArgs) -> RunResult raise TrpgFailure {
+async fn dispatch_scenario(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let verb = need_pos(positions, 1, "scenario verb")
   match verb {
+    "list" => scenario_list(global)
+    "import" => scenario_import(global)
+    "remove" => scenario_remove(global)
     "show" => scenario_show(global)
     "validate" => scenario_validate(global)
     _ =>
       fail(
         TrpgError::Usage(
           "unknown scenario verb: \{verb}",
-          Some("supported verbs: show, validate"),
+          Some("supported verbs: list, import, remove, show, validate"),
         ),
       )
   }
 }
 
 ///|
-fn scenario_validate(global : GlobalArgs) -> RunResult raise TrpgFailure {
+fn scenario_list(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let scenarios = list_installed_scenarios()
+  let json = Json::object({
+    "command": "scenario.list",
+    "scenarios": Json::array(scenarios.map(scenario_install_row_json)),
+  })
+  let human = if scenarios.length() == 0 {
+    "(シナリオ未導入)"
+  } else {
+    scenarios.map(format_scenario_install_row).join("\n")
+  }
+  output_success({ json, human, stderr: "scenario.list" }, global)
+}
+
+///|
+async fn scenario_import(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let source_ref = need_pos(positions, 2, "scenario url or path")
+  let source = load_scenario_source(source_ref)
+  let row = install_scenario_source(
+    source,
+    flag_present(global.args, "--force"),
+  )
+  let json = Json::object({
+    "command": "scenario.import",
+    "scenario_id": Json::string(row.id),
+    "scenario": scenario_install_row_json(row),
+    "installed_path": Json::string(row.path),
+    "source_url": match row.source_url {
+      Some(value) => Json::string(value)
+      None => Json::null()
+    },
+  })
+  json_success(json, "scenario imported: \{row.id}", global)
+}
+
+///|
+fn scenario_remove(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let scenario_id = need_pos(positions, 2, "scenario id")
-  let scenario = load_scenario_json(scenario_id)
-  validate_scenario_json(scenario, scenario_id)
+  let row = require_installed_scenario(scenario_id)
+  ensure_scenario_remove_allowed(scenario_id)
+  remove_file_if_exists(row.path)
+  remove_file_if_exists(scenario_meta_path(scenario_id))
+  let json = Json::object({
+    "command": "scenario.remove",
+    "scenario": scenario_install_row_json(row),
+    "removed": Json::boolean(true),
+  })
+  json_success(json, "scenario removed: \{scenario_id}", global)
+}
+
+///|
+async fn scenario_validate(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let scenario_ref = need_pos(positions, 2, "scenario id|path|url")
+  let source = load_scenario_source(scenario_ref)
+  validate_scenario_json(source.scenario, source.scenario_id)
   let json = Json::object({
     "command": "scenario.validate",
-    "scenario_id": Json::string(scenario_id),
+    "scenario_id": Json::string(source.scenario_id),
+    "source_kind": Json::string(source.source_kind),
+    "source": Json::string(source.source_label),
     "valid": true,
   })
-  json_success(json, "scenario valid: \{scenario_id}", global)
+  json_success(json, "scenario valid: \{source.scenario_id}", global)
 }
 
 ///|
 fn scenario_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let scenario_id = need_pos(positions, 2, "scenario id")
+  let installed = require_installed_scenario(scenario_id)
   let scenario = load_scenario_json(scenario_id)
   validate_scenario_json(scenario, scenario_id)
   let title = json_string_field(scenario, "title", scenario_id)
   let summary = json_string_field(scenario, "summary", "")
   let opening = json_string_field(scenario, "opening_scene", "entrance")
+  let version = json_string_opt_field(scenario, "version")
   let scene_lines = format_scenario_scenes(scenario)
   let npc_lines = format_scenario_npcs(scenario)
   let party_setup = format_party_setup(scenario)
@@ -2580,6 +2640,16 @@ fn scenario_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let human = "シナリオ: \{title}\n" +
     "id: \{scenario_id}\n" +
     "概要: \{summary}\n" +
+    "path: \{installed.path}\n" +
+    "origin: \{installed.origin}\n" +
+    (match version {
+      Some(value) if !value.is_empty() => "version: \{value}\n"
+      _ => ""
+    }) +
+    (match installed.source_url {
+      Some(value) if !value.is_empty() => "source_url: \{value}\n"
+      _ => ""
+    }) +
     "開始シーン: \{opening}\n\n" +
     "## party_setup\n" +
     party_setup +
@@ -2593,6 +2663,7 @@ fn scenario_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "command": "scenario.show",
     "scenario_id": Json::string(scenario_id),
     "scenario": scenario,
+    "metadata": scenario_install_row_json(installed),
   })
   output_success(
     { json, human, stderr: "scenario.show: \{scenario_id}" },

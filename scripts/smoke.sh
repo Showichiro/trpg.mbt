@@ -10,9 +10,53 @@ mkdir -p "$TRPG_HOME/scenarios"
 repo_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cp "$repo_dir"/scenarios/*.json "$TRPG_HOME/scenarios/"
 
+cat >/tmp/trpg-public-demo.json <<'EOF'
+{
+  "id": "public_demo",
+  "title": "公開テスト用シナリオ",
+  "summary": "scenario import の smoke test",
+  "opening_scene": "entrance",
+  "scenes": {
+    "entrance": {
+      "description": "テスト用の入口",
+      "transitions": []
+    }
+  }
+}
+EOF
+
+mkdir -p /tmp/trpg-http-scenarios
+cat >/tmp/trpg-http-scenarios/remote_demo.json <<'EOF'
+{
+  "id": "remote_demo",
+  "title": "HTTP 取込テスト用シナリオ",
+  "summary": "scenario import URL smoke test",
+  "opening_scene": "entrance",
+  "scenes": {
+    "entrance": {
+      "description": "HTTP 配信された入口",
+      "transitions": []
+    }
+  }
+}
+EOF
+
+http_port=18743
+python3 -m http.server "$http_port" --bind 127.0.0.1 --directory /tmp/trpg-http-scenarios >/tmp/trpg-http-server.log 2>&1 &
+http_pid="$!"
+trap 'kill "$http_pid" 2>/dev/null || true' EXIT INT TERM
+sleep 1
+
 trpg --describe >/tmp/trpg-describe.json
 trpg --help >/tmp/trpg-help.txt
+trpg scenario list >/tmp/trpg-scenario-list-before.json
 trpg scenario validate forgotten_library >/tmp/trpg-scenario-validate.json
+trpg scenario validate /tmp/trpg-public-demo.json >/tmp/trpg-scenario-validate-path.json
+trpg scenario import /tmp/trpg-public-demo.json >/tmp/trpg-scenario-import.json
+trpg scenario validate "http://127.0.0.1:${http_port}/remote_demo.json" >/tmp/trpg-scenario-validate-url.json
+trpg scenario import "http://127.0.0.1:${http_port}/remote_demo.json" >/tmp/trpg-scenario-import-url.json
+trpg scenario show public_demo >/tmp/trpg-scenario-show-public.json
+trpg scenario list >/tmp/trpg-scenario-list-after.json
 trpg session init forgotten_library >/tmp/trpg-session.json
 if trpg session init forgotten_library >/tmp/trpg-conflict.json 2>/tmp/trpg-conflict.err; then
   echo "smoke: expected session init conflict" >&2
@@ -54,6 +98,8 @@ trpg scene flag sealed true >/tmp/trpg-flag.json
 trpg session goals >/tmp/trpg-session-goals-after.json
 trpg session report >/tmp/trpg-session-report.json
 trpg session end >/tmp/trpg-session-end.json
+trpg scenario remove public_demo >/tmp/trpg-scenario-remove.json
+trpg scenario remove remote_demo >/tmp/trpg-scenario-remove-url.json
 
 if trpg status alice add 失敗例 --tags ritual seal >/tmp/trpg-bad-tags.json 2>/tmp/trpg-bad-tags.err; then
   echo "smoke: expected --tags ritual seal to fail" >&2
@@ -67,6 +113,21 @@ fi
 
 if ! grep -q '"target":7' /tmp/trpg-roll-prep.json; then
   echo "smoke: expected --prep to use target 7 at entrance" >&2
+  exit 1
+fi
+
+if ! grep -q '"scenario_id":"public_demo"' /tmp/trpg-scenario-import.json; then
+  echo "smoke: expected scenario import to install public_demo" >&2
+  exit 1
+fi
+
+if ! grep -q '"id":"public_demo"' /tmp/trpg-scenario-list-after.json; then
+  echo "smoke: expected scenario list to include imported scenario" >&2
+  exit 1
+fi
+
+if ! grep -q '"scenario_id":"remote_demo"' /tmp/trpg-scenario-import-url.json; then
+  echo "smoke: expected URL scenario import to install remote_demo" >&2
   exit 1
 fi
 

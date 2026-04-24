@@ -20,11 +20,16 @@ bash scripts/install.sh
 
 `TRPG_HOME` を指定すると DB とシナリオ配置先を変更できます。
 
+この CLI は **非対話がデフォルト** です。ユーザ本人が叩いてもよいですし、AI エージェントが `scenario list/import/show` と `session init` を順に実行する前提でも使えます。
+
 ## 基本コマンド
 
 ```bash
 trpg --describe
 trpg --help
+trpg scenario list
+trpg scenario import https://example.com/scenarios/forgotten_library.json
+trpg scenario import /path/to/local_scenario.json
 trpg session init forgotten_library
 trpg session show
 trpg session goals
@@ -56,6 +61,19 @@ trpg session end
 ```
 
 stdout はデフォルトで JSON、stderr は人間向けの短い説明です。`--human` を付けると stdout も人間向けになります。
+
+公開向けの scenario 管理は次の流れです。
+
+```bash
+trpg scenario list
+trpg scenario import https://example.com/scenarios/demo.json
+trpg scenario show demo
+trpg session init demo
+```
+
+`trpg scenario import <url-or-path>` は URL とローカル path の両方を受け付けます。取り込み先は `TRPG_HOME/scenarios/<scenario_id>.json` です。既に同じ id がある場合は conflict になり、`--force` を付けたときだけ置き換えます。active session がその scenario を使っている間は replace/remove できません。
+
+`trpg scenario list` は install/import 済み scenario を JSON で返します。各 entry には `id`, `title`, `summary`, `path`, `origin`, `source_url`, `installed_at_ms` が入り、AI エージェントが候補選定や導入判定にそのまま使えます。
 
 `trpg roll <name> --stat ...` は PC/NPC の能力値、trait、inventory item、structured status を自動合算します。`base_stat` も加算対象です。`--scene-default` を付けると現在シーンの `difficulty` を既定値として使い、scene tags と `--tags` は **union** されます。override ではありません。`--stat` 併用時は target/tags を scene から流用したまま stat だけ差し替えます。`--prep` は準備・援護向けの sugar で、target 未指定時に現在 scene の target を 2 下げ、scene target が無ければ 9 を使います。
 
