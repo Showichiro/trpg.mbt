@@ -14,13 +14,17 @@ bash scripts/install.sh
 
 - `~/.local/bin/trpg`
 - `~/.trpg/scenarios/*.json`
-- `~/.claude/skills/trpg-gm/SKILL.md`
+- `~/.claude/skills/trpg-gm/`
+- `~/.claude/skills/trpg-retrospective/`
 - `~/.claude/agents/trpg-player.md`
 - `~/.claude/commands/trpg-start.md`
+- `~/.claude/commands/trpg-retrospective.md`
 
 `TRPG_HOME` を指定すると DB とシナリオ配置先を変更できます。
 
-この CLI は **非対話がデフォルト** です。ユーザ本人が叩いてもよいですし、AI エージェントが `scenario list/import/show` と `session init` を順に実行する前提でも使えます。
+`scripts/install.sh` は開発者向け bootstrap です。一般利用者は repo を clone していなくても、配布済み `trpg` バイナリから `trpg scenario bundled` / `trpg scenario install <scenario_id>` で同梱 scenario を導入できます。
+
+この CLI は **非対話がデフォルト** です。ユーザ本人が叩いてもよいですし、AI エージェントが `scenario bundled/install/list/show` や `scenario import` と `session init` を順に実行する前提でも使えます。
 
 ## 基本コマンド
 
@@ -28,6 +32,8 @@ bash scripts/install.sh
 trpg --describe
 trpg --help
 trpg scenario list
+trpg scenario bundled
+trpg scenario install forgotten_library
 trpg scenario import https://example.com/scenarios/forgotten_library.json
 trpg scenario import /path/to/local_scenario.json
 trpg session init forgotten_library
@@ -63,26 +69,30 @@ trpg session end
 
 stdout はデフォルトで JSON、stderr は人間向けの短い説明です。`--human` を付けると stdout も人間向けになります。
 
-公開向けの scenario 管理は次の流れです。
+一般利用者向けの正導線は次です。
 
 ```bash
+trpg scenario bundled
+trpg scenario install forgotten_library
 trpg scenario list
-trpg scenario import https://example.com/scenarios/demo.json
-trpg scenario show demo
-trpg session init demo
+trpg session init forgotten_library
 ```
 
-`trpg scenario import <url-or-path>` は URL とローカル path の両方を受け付けます。取り込み先は `TRPG_HOME/scenarios/<scenario_id>.json` です。既に同じ id がある場合は conflict になり、`--force` を付けたときだけ置き換えます。active session がその scenario を使っている間は replace/remove できません。
+`trpg scenario bundled` は CLI に同梱された導入可能 scenario を一覧表示します。`trpg scenario install <scenario_id>` はその中から 1 本を `TRPG_HOME/scenarios/<scenario_id>.json` に展開します。既に同じ id がある場合は conflict になり、`--force` を付けたときだけ置き換えます。active session がその scenario を使っている間は replace/remove できません。
 
-`trpg scenario list` は install/import 済み scenario を JSON で返します。各 entry には `id`, `title`, `summary`, `path`, `origin`, `source_url`, `installed_at_ms` が入り、AI エージェントが候補選定や導入判定にそのまま使えます。
+`trpg scenario import <url-or-path>` は URL とローカル path の両方を受け付けます。外部配布 scenario を導入したいときはこちらを使ってください。取り込み先は `TRPG_HOME/scenarios/<scenario_id>.json` です。既に同じ id がある場合は conflict になり、`--force` を付けたときだけ置き換えます。active session がその scenario を使っている間は replace/remove できません。
 
-同梱 scenario は現状 2 本です。
+`trpg scenario list` は install/import 済み scenario だけを JSON で返します。各 entry には `id`, `title`, `summary`, `path`, `origin`, `source_url`, `installed_at_ms` が入り、AI エージェントが候補選定や導入判定にそのまま使えます。bundled 候補は `trpg scenario bundled` を見てください。
+
+同梱 scenario は現状 3 本です。
 
 - `forgotten_library`: 1〜2 人向けの封印回収シナリオ
 - `festival_bathhouse_fire`: 2〜3 人向けの災害対応シナリオ
 - `midnight_auction`: 3〜4 人向けの利害対立つき競売シナリオ
 
 同梱 sample PC は `alice`, `orion`, `bram`, `mina` の 4 人です。
+
+`trpg scenario install <scenario_id>` は、その scenario が `party_setup.sample_pcs` に列挙している bundled sample PC も一緒に `TRPG_HOME/scenarios/` へ展開します。`trpg pc add --template alice` のような template 追加は repo checkout なしで動きます。
 
 `trpg roll <name> --stat ...` は PC/NPC の能力値、trait、inventory item、structured status を自動合算します。`base_stat` も加算対象です。`--scene-default` を付けると現在シーンの `difficulty` を既定値として使い、scene tags と `--tags` は **union** されます。override ではありません。`--stat` 併用時は target/tags を scene から流用したまま stat だけ差し替えます。`--prep` は準備・援護向けの sugar で、target 未指定時に現在 scene の target を 2 下げ、scene target が無ければ 9 を使います。
 
@@ -141,6 +151,8 @@ bash ~/ghq/github.com/Showichiro/trpg.mbt/scripts/smoke.sh
 ```
 
 Claude Code では `/trpg-start` を実行すると GM skill が起動します。
+
+`/trpg-retrospective` を実行すると、最新または active session を対象にした振り返り読み物を `${TRPG_HOME:-$HOME/.trpg}/reports/` へ保存できます。skill は `.claude/skills/trpg-retrospective/scripts/export_session_context.py` で session / scenario / characters / events を集め、同じ会話に残っている narration や private intent があれば補助的に使います。
 
 fresh start では、GM skill は開始前に参加人数と参加 PC を確認します。参加候補は選んだ scenario の `party_setup.default_participants` を正とし、`party_setup` が無ければ `recommended_party_size.min` を見て、それも無ければ確認に戻ります。scenario 定義の NPC は `session init` 時に自動登録されるので、GM が追加 NPC を足したいときだけ手動登録します。
 

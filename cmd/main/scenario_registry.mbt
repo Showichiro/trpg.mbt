@@ -262,7 +262,9 @@ fn require_installed_scenario(
   fail(
     TrpgError::NotFound(
       "scenario is not installed: \{id}",
-      Some("run `trpg scenario list` or `trpg scenario import <url-or-path>`"),
+      Some(
+        "run `trpg scenario list`, `trpg scenario bundled`, or `trpg scenario install <scenario_id>`",
+      ),
     ),
   )
 }
@@ -344,14 +346,30 @@ async fn load_scenario_source(
       source_url: None,
     }
   } else {
-    let scenario = load_scenario_json(value)
-    {
-      scenario_id: value,
-      source_kind: "installed",
-      source_label: scenario_path(value),
-      source_text: read_text_file(scenario_path(value)),
-      scenario,
-      source_url: scenario_source_url(load_scenario_install_meta(value)),
+    let installed_path = scenario_path(value)
+    if @fs.path_exists(installed_path) {
+      let scenario = load_scenario_json(value)
+      {
+        scenario_id: value,
+        source_kind: "installed",
+        source_label: installed_path,
+        source_text: read_text_file(installed_path),
+        scenario,
+        source_url: scenario_source_url(load_scenario_install_meta(value)),
+      }
+    } else {
+      match bundled_scenario_source(value) {
+        Some(source) => source
+        None =>
+          fail(
+            TrpgError::NotFound(
+              "scenario is not found: \{value}",
+              Some(
+                "run `trpg scenario bundled` to inspect bundled scenarios or `trpg scenario import <url-or-path>`",
+              ),
+            ),
+          )
+      }
     }
   }
 }
@@ -416,6 +434,78 @@ fn install_scenario_source(
     source.source_url,
     installed_at_ms,
   )
+  write_text_file(scenario_meta_path(source.scenario_id), meta.stringify())
+  scenario_install_row(
+    source.scenario_id,
+    target_path,
+    source.scenario,
+    Some(meta),
+  )
+}
+
+///|
+fn scenario_sample_pc_ids(scenario : Json) -> Array[String] {
+  match json_get(scenario, "party_setup") {
+    Some(Object(setup)) =>
+      json_string_array_field(Json::object(setup), "sample_pcs")
+    _ => []
+  }
+}
+
+///|
+fn write_bundled_template(
+  template_id : String,
+  allow_replace : Bool,
+) -> Unit raise TrpgFailure {
+  let path = bundled_template_path(template_id)
+  if @fs.path_exists(path) && !allow_replace {
+    return
+  }
+  match bundled_template_text(template_id) {
+    Some(text) => write_text_file(path, text)
+    None =>
+      fail(
+        TrpgError::NotFound(
+          "bundled sample pc is not found: \{template_id}",
+          Some("check `party_setup.sample_pcs` in the bundled scenario"),
+        ),
+      )
+  }
+}
+
+///|
+fn install_bundled_templates(
+  scenario : Json,
+  allow_replace : Bool,
+) -> Unit raise TrpgFailure {
+  for template_id in scenario_sample_pc_ids(scenario) {
+    write_bundled_template(template_id, allow_replace)
+  }
+}
+
+///|
+fn install_bundled_scenario(
+  scenario_id : String,
+  allow_replace : Bool,
+) -> ScenarioInstallRow raise TrpgFailure {
+  let source = match bundled_scenario_source(scenario_id) {
+    Some(source) => source
+    None =>
+      fail(
+        TrpgError::NotFound(
+          "bundled scenario is not found: \{scenario_id}",
+          Some("run `trpg scenario bundled` to inspect installable scenarios"),
+        ),
+      )
+  }
+  validate_scenario_json(source.scenario, source.scenario_id)
+  ensure_scenario_write_allowed(source.scenario_id, allow_replace)
+  ensure_home_dirs()
+  let target_path = scenario_path(source.scenario_id)
+  write_text_file(target_path, source.source_text)
+  install_bundled_templates(source.scenario, allow_replace)
+  let installed_at_ms = now_ms()
+  let meta = scenario_install_meta_json("bundled", None, installed_at_ms)
   write_text_file(scenario_meta_path(source.scenario_id), meta.stringify())
   scenario_install_row(
     source.scenario_id,

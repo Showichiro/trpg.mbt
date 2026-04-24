@@ -26,3 +26,22 @@ async test "load scenario source supports local path" {
   inspect(source.source_kind, content="path")
   inspect(source.source_label, content=path)
 }
+
+///|
+test "bundled scenario rows expose shipped scenarios" {
+  let ids = bundled_scenario_rows().map(row => row.id).join(",")
+  inspect(ids.contains("forgotten_library"), content="true")
+  inspect(ids.contains("festival_bathhouse_fire"), content="true")
+  inspect(ids.contains("midnight_auction"), content="true")
+}
+
+///|
+test "bundled scenario source supports bundled ids" {
+  let source = match bundled_scenario_source("forgotten_library") {
+    Some(source) => source
+    None => panic()
+  }
+  inspect(source.scenario_id, content="forgotten_library")
+  inspect(source.source_kind, content="bundled")
+  inspect(source.source_label, content="bundled:forgotten_library")
+}

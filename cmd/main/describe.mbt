@@ -115,6 +115,12 @@ fn describe_commands_json() -> Json {
       "scenario.list": command_descriptor(
         "インストール済みシナリオを一覧表示する", "trpg scenario list",
       ),
+      "scenario.bundled": command_descriptor(
+        "同梱シナリオを一覧表示する", "trpg scenario bundled",
+      ),
+      "scenario.install": command_descriptor(
+        "同梱シナリオを導入する", "trpg scenario install <scenario_id> [--force]",
+      ),
       "scenario.import": command_descriptor(
         "URL またはローカル path からシナリオを取り込む", "trpg scenario import <url-or-path> [--force]",
       ),

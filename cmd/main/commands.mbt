@@ -2799,6 +2799,8 @@ async fn dispatch_scenario(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let verb = need_pos(positions, 1, "scenario verb")
   match verb {
     "list" => scenario_list(global)
+    "bundled" => scenario_bundled(global)
+    "install" => scenario_install(global)
     "import" => scenario_import(global)
     "remove" => scenario_remove(global)
     "show" => scenario_show(global)
@@ -2807,7 +2809,9 @@ async fn dispatch_scenario(global : GlobalArgs) -> RunResult raise TrpgFailure {
       fail(
         TrpgError::Usage(
           "unknown scenario verb: \{verb}",
-          Some("supported verbs: list, import, remove, show, validate"),
+          Some(
+            "supported verbs: list, bundled, install, import, remove, show, validate",
+          ),
         ),
       )
   }
@@ -2821,7 +2825,7 @@ fn scenario_list(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "scenarios": Json::array(scenarios.map(scenario_install_row_json)),
   })
   let human = if scenarios.length() == 0 {
-    "(シナリオ未導入)"
+    "(シナリオ未導入)\n`trpg scenario bundled` で同梱シナリオを確認し、`trpg scenario install <scenario_id>` で導入できます"
   } else {
     scenarios.map(format_scenario_install_row).join("\n")
   }
@@ -2829,10 +2833,73 @@ fn scenario_list(global : GlobalArgs) -> RunResult raise TrpgFailure {
 }
 
 ///|
+fn scenario_bundled(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let scenarios = bundled_scenario_rows()
+  let json = Json::object({
+    "command": "scenario.bundled",
+    "scenarios": Json::array(
+      scenarios.map(row => {
+        Json::object({
+          "id": Json::string(row.id),
+          "title": Json::string(row.title),
+          "summary": Json::string(row.summary),
+          "path": Json::string(row.path),
+          "origin": Json::string("bundled"),
+          "interaction_mode": Json::string(row.interaction_mode),
+          "version": match row.version {
+            Some(value) => Json::string(value)
+            None => Json::null()
+          },
+          "bundled": Json::boolean(true),
+        })
+      }),
+    ),
+  })
+  let human = if scenarios.length() == 0 {
+    "(同梱シナリオなし)"
+  } else {
+    scenarios
+    .map(row => {
+      "- \{row.id}: \{row.title}\n" +
+      (if row.summary.is_empty() { "" } else { "  summary: \{row.summary}\n" }) +
+      "  interaction_mode: \{row.interaction_mode}\n" +
+      "  install: trpg scenario install \{row.id}"
+    })
+    .join("\n")
+  }
+  output_success({ json, human, stderr: "scenario.bundled" }, global)
+}
+
+///|
+fn scenario_install(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let scenario_id = need_pos(positions, 2, "scenario id")
+  let row = install_bundled_scenario(
+    scenario_id,
+    flag_present(global.args, "--force"),
+  )
+  let json = Json::object({
+    "command": "scenario.install",
+    "scenario_id": Json::string(row.id),
+    "scenario": scenario_install_row_json(row),
+    "installed_path": Json::string(row.path),
+  })
+  json_success(json, "bundled scenario installed: \{row.id}", global)
+}
+
+///|
 async fn scenario_import(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let source_ref = need_pos(positions, 2, "scenario url or path")
   let source = load_scenario_source(source_ref)
+  if source.source_kind == "bundled" {
+    fail(
+      TrpgError::Usage(
+        "bundled scenario should be installed, not imported: \{source.scenario_id}",
+        Some("run `trpg scenario install \{source.scenario_id}`"),
+      ),
+    )
+  }
   let row = install_scenario_source(
     source,
     flag_present(global.args, "--force"),

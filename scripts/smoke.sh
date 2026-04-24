@@ -1,14 +1,22 @@
 #!/bin/sh
 set -eu
 
-TRPG_HOME="${TRPG_HOME:-${HOME}/.trpg}"
+temp_home=""
+if [ "${TRPG_HOME:-}" = "" ]; then
+  temp_home="$(mktemp -d /tmp/trpg-smoke.XXXXXX)"
+  TRPG_HOME="$temp_home"
+fi
 export TRPG_HOME
+
+cleanup() {
+  kill "$http_pid" 2>/dev/null || true
+  if [ "$temp_home" != "" ]; then
+    rm -rf "$temp_home"
+  fi
+}
 
 rm -f "$TRPG_HOME/trpg.db"
 mkdir -p "$TRPG_HOME/scenarios"
-
-repo_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-cp "$repo_dir"/scenarios/*.json "$TRPG_HOME/scenarios/"
 
 cat >/tmp/trpg-public-demo.json <<'EOF'
 {
@@ -44,13 +52,17 @@ EOF
 http_port=18743
 python3 -m http.server "$http_port" --bind 127.0.0.1 --directory /tmp/trpg-http-scenarios >/tmp/trpg-http-server.log 2>&1 &
 http_pid="$!"
-trap 'kill "$http_pid" 2>/dev/null || true' EXIT INT TERM
+trap cleanup EXIT INT TERM
 sleep 1
 
 trpg --describe >/tmp/trpg-describe.json
 trpg --help >/tmp/trpg-help.txt
 trpg scenario list >/tmp/trpg-scenario-list-before.json
+trpg scenario bundled >/tmp/trpg-scenario-bundled.json
 trpg scenario validate forgotten_library >/tmp/trpg-scenario-validate.json
+trpg scenario install forgotten_library >/tmp/trpg-scenario-install-forgotten.json
+trpg scenario install festival_bathhouse_fire >/tmp/trpg-scenario-install-fire.json
+trpg scenario install midnight_auction >/tmp/trpg-scenario-install-auction.json
 trpg scenario validate festival_bathhouse_fire >/tmp/trpg-scenario-validate-fire.json
 trpg scenario show festival_bathhouse_fire >/tmp/trpg-scenario-show-fire.json
 trpg scenario validate midnight_auction >/tmp/trpg-scenario-validate-auction.json
@@ -140,6 +152,16 @@ fi
 
 if ! grep -q '"scenario_id":"public_demo"' /tmp/trpg-scenario-import.json; then
   echo "smoke: expected scenario import to install public_demo" >&2
+  exit 1
+fi
+
+if ! grep -q '"id":"forgotten_library"' /tmp/trpg-scenario-bundled.json; then
+  echo "smoke: expected bundled scenarios to include forgotten_library" >&2
+  exit 1
+fi
+
+if ! grep -q '"scenario_id":"forgotten_library"' /tmp/trpg-scenario-install-forgotten.json; then
+  echo "smoke: expected bundled scenario install to install forgotten_library" >&2
   exit 1
 fi
 

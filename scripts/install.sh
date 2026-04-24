@@ -18,11 +18,14 @@ if [ ! -x "$bin_path" ]; then
 fi
 
 mkdir -p "$install_dir" "$trpg_home/scenarios" \
-  "$HOME/.claude/skills/trpg-gm" "$HOME/.claude/agents" "$HOME/.claude/commands"
+  "$HOME/.claude/skills" "$HOME/.claude/agents" "$HOME/.claude/commands"
 
 cp "$bin_path" "$install_dir/trpg"
 chmod 0755 "$install_dir/trpg"
-cp "$repo_dir"/scenarios/*.json "$trpg_home/scenarios/"
+
+TRPG_HOME="$trpg_home" "$install_dir/trpg" scenario install forgotten_library --force >/dev/null
+TRPG_HOME="$trpg_home" "$install_dir/trpg" scenario install festival_bathhouse_fire --force >/dev/null
+TRPG_HOME="$trpg_home" "$install_dir/trpg" scenario install midnight_auction --force >/dev/null
 
 copy_warn() {
   src="$1"
@@ -33,9 +36,21 @@ copy_warn() {
   cp "$src" "$dst"
 }
 
-copy_warn "$repo_dir/.claude/skills/trpg-gm/SKILL.md" "$HOME/.claude/skills/trpg-gm/SKILL.md"
+copy_tree_warn() {
+  src="$1"
+  dst="$2"
+  if [ -e "$dst" ]; then
+    echo "install.sh: overwrite ${dst}" >&2
+    rm -rf "$dst"
+  fi
+  cp -R "$src" "$dst"
+}
+
+copy_tree_warn "$repo_dir/.claude/skills/trpg-gm" "$HOME/.claude/skills/trpg-gm"
+copy_tree_warn "$repo_dir/.claude/skills/trpg-retrospective" "$HOME/.claude/skills/trpg-retrospective"
 copy_warn "$repo_dir/.claude/agents/trpg-player.md" "$HOME/.claude/agents/trpg-player.md"
 copy_warn "$repo_dir/.claude/commands/trpg-start.md" "$HOME/.claude/commands/trpg-start.md"
+copy_warn "$repo_dir/.claude/commands/trpg-retrospective.md" "$HOME/.claude/commands/trpg-retrospective.md"
 
 echo "installed trpg at ${install_dir}/trpg" >&2
-echo "installed scenarios at ${trpg_home}/scenarios" >&2
+echo "installed bundled scenarios at ${trpg_home}/scenarios" >&2
