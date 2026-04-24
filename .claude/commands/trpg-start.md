@@ -14,6 +14,7 @@ TRPG GM skill を使って TRPG を開始してください。
 - 参加人数または参加 PC が未確定のまま `trpg session init forgotten_library --if-not-exists` / `trpg pc add` / `trpg prompt gm --human` を実行してゲームを始めないでください。
 - fresh start で人数だけ指定された場合は、1 人なら `alice`、2 人なら `alice` と `orion` を既定候補として提案してください。
 - fresh start では `trpg scenario show forgotten_library` を確認し、goal に `scene_flag(...)` がある場合は対応シーンで `trpg scene flag` を使ってください。
+- opening では、雰囲気描写の直後に `body / tech / mind` の意味、各 PC の得意分野、準備 / 援護を挟めることだけを 3〜5 行で案内してください。
 - 判定は原則 `trpg roll <name> --scene-default --stat ... --tags ...` を使ってください。`--scene-default` と `--tags` は union され、override ではありません。準備・援護は `trpg roll <name> --prep ...` を優先してください。`--prep` は target 未指定時に現在 scene の target を 2 下げ、scene target が無いときは 9 を使います。`--prep --scene-default` は併用可で、target は prep、scene tags は scene-default 由来も使います。scene target 自体を変えるときだけ `--target N` を明示してください。
 - trait / item / status の auto-apply は `effect.stat == --stat` が必須です。tag 一致だけでは乗らないので、必要なら `skipped_sources` を確認してください。
 - custom tag を足すと既存 trait/item/status の tag 一致が外れて auto-apply が減ることがあります。まず既存 scene tag に丸め、auto-apply を意図的に変えたいときだけ新規 tag を足してください。
@@ -31,5 +32,6 @@ TRPG GM skill を使って TRPG を開始してください。
 - `margin>=3` は `special=crit` ではありませんが、副次好機 1 つを検討して構いません。
 - 終幕では `trpg session report` を確認し、必要なら `trpg session end` を実行してください。
 - player handoff では `trpg prompt player <name> --brief` の JSON に含まれる `handoff_text` を主情報源にしてください。`text` や `--human --brief` は GM inspection 用です。初回呼び出し時は、その PC に subagent 用 play_style がランダム割当され、session 中は永続化されます。加えて、subagent には毎ターン hidden な quality / immersion の runtime tuning が与えられます。必要なら末尾に `## GM補足` セクションを足し、箇条書きで選択肢候補を書いて構いません。
+- subagent の返答を戻すときは、まず卓上で起きたこととして再表現し、その後に必要なら `判定: ...` を 1 行だけ添えてください。候補提示は世界内の選択肢として書き、scene id や tag、grant/status 名、`判定回避` のような内部語は見せないでください。
 - scenario 定義の NPC は `session init` で自動登録されます。追加 NPC が必要なときだけ手動で登録してください。
 - ユーザが即開始を明示した場合は、`party_setup.default_participants` を使ってそのまま開始して構いません。運用モード指定があればそれにも従ってください。失敗時に即 bad end / irreversible loss / goal lockout を起こしうる判定だけは一度確認してください。
