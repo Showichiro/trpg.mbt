@@ -88,6 +88,7 @@ struct ModifierPreviewRow {
   name : String
   amount : Int
   tags : Array[String]
+  source : String?
   uses : Int?
   duration : String?
   on_trigger : String?
@@ -141,6 +142,16 @@ struct ActorRollRow {
   skipped_modifiers : Array[SkippedModifierRow]
   consumed_statuses : Array[String]
   scene_warning : String?
+}
+
+///|
+struct GrantedStatusRow {
+  target : String
+  name : String
+  ability : String
+  amount : Int
+  tags : Array[String]
+  source : String?
 }
 
 ///|

@@ -22,11 +22,14 @@ trpg pc templates list >/tmp/trpg-pc-templates.json
 trpg pc add alice --template alice >/tmp/trpg-pc-add.json
 trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show.json
 trpg roll alice --stat body --scene-default --context "入口の扉を押し開ける" >/tmp/trpg-roll-open.json
-trpg status alice add --name 祝福 --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume >/tmp/trpg-status.json
+trpg status alice add --name 祝福 --source gm --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume >/tmp/trpg-status.json
+trpg roll alice --prep --scene-default --stat tech --bonus 12 --grant-to alice --grant tech:+1@forced-entry --grant-name 足場援護 --context "足場を整える" >/tmp/trpg-roll-prep.json
+trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show-after-prep.json
 trpg roll alice --stat tech --tags forced-entry --target 10 --context "扉の解錠" >/tmp/trpg-roll.json
 trpg roll alice --stat mind --target 9 --tags ritual,seal --context "譜面を読み替えて補助線を探る" >/tmp/trpg-roll-alt-target.json
 trpg hp alice -3 --context "扉の反動" >/tmp/trpg-hp.json
 trpg item give alice "銀の鍵" --desc "封印石棺の鍵" >/tmp/trpg-item-give.json
+trpg item drop alice "銀の鍵" --note "司書へ返却した" >/tmp/trpg-item-drop.json
 trpg log add "扉を開けた" --as alice >/tmp/trpg-log-add.json
 trpg log show --kind roll -n 5 >/tmp/trpg-log-show.json
 trpg roll history --as alice -n 5 >/tmp/trpg-roll-history.json

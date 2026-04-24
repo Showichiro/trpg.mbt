@@ -647,7 +647,10 @@ fn dispatch_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   if verb_or_expr == "history" {
     roll_history(global)
   } else if option_value(global.args, "--stat") != None ||
-    flag_present(global.args, "--scene-default") {
+    flag_present(global.args, "--scene-default") ||
+    flag_present(global.args, "--prep") ||
+    option_value(global.args, "--grant") != None ||
+    option_value(global.args, "--grant-to") != None {
     character_roll(global)
   } else {
     raw_roll(global)
@@ -762,6 +765,163 @@ fn raw_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
 }
 
 ///|
+fn prep_target(default_target : Int?) -> Int {
+  match default_target {
+    Some(value) => if value <= 2 { 2 } else { value - 2 }
+    None => 9
+  }
+}
+
+///|
+fn modifier_spec_text(ability : String, amount : Int) -> String {
+  if amount >= 0 {
+    "\{ability}:+\{amount}"
+  } else {
+    "\{ability}:\{amount}"
+  }
+}
+
+///|
+fn default_grant_name(actor : String) -> String {
+  actor + " の援護"
+}
+
+///|
+fn grant_status_json(row : GrantedStatusRow) -> Json {
+  let object : Map[String, Json] = {
+    "target": Json::string(row.target),
+    "name": Json::string(row.name),
+    "ability": Json::string(row.ability),
+    "amount": j_int(row.amount),
+    "tags": Json::array(row.tags.map(value => Json::string(value))),
+  }
+  match row.source {
+    Some(value) => object["source"] = Json::string(value)
+    None => ()
+  }
+  Json::object(object)
+}
+
+///|
+fn format_granted_status(row : GrantedStatusRow) -> String {
+  let amount_text = if row.amount >= 0 {
+    "+" + row.amount.to_string()
+  } else {
+    row.amount.to_string()
+  }
+  let tags_text = if row.tags.length() == 0 {
+    "(none)"
+  } else {
+    row.tags.join(",")
+  }
+  let source_text = match row.source {
+    Some(value) if !value.is_empty() => " / source=\{value}"
+    _ => ""
+  }
+  "\{row.target} <= \{row.name} (\{row.ability} \{amount_text} / tags=\{tags_text}\{source_text})"
+}
+
+///|
+fn resolve_grant_status(
+  db : @sqlite.Database,
+  session_id : Int,
+  actor : String,
+  args : Array[String],
+) -> (CharacterRow, GrantedStatusRow)? raise TrpgFailure {
+  let target_name = option_value(args, "--grant-to")
+  let spec = option_value(args, "--grant")
+  let explicit_name = option_value(args, "--grant-name")
+  match (target_name, spec) {
+    (None, None) =>
+      if explicit_name != None {
+        fail(
+          TrpgError::Usage(
+            "--grant-name requires --grant and --grant-to",
+            Some(
+              "use `trpg roll orion --prep --grant-to alice --grant tech:+1@ritual,seal`",
+            ),
+          ),
+        )
+      } else {
+        None
+      }
+    (Some(_), None) | (None, Some(_)) =>
+      fail(
+        TrpgError::Usage(
+          "granting support requires both --grant-to and --grant",
+          Some(
+            "use `trpg roll orion --prep --grant-to alice --grant tech:+1@ritual,seal`",
+          ),
+        ),
+      )
+    (Some(target), Some(grant_spec)) => {
+      let target_row = require_character(db, session_id, target)
+      let (ability, amount, grant_tags) = parse_modifier_with_tags_spec(
+        grant_spec,
+      )
+      let granted = {
+        target,
+        name: explicit_name.unwrap_or(default_grant_name(actor)),
+        ability,
+        amount,
+        tags: grant_tags,
+        source: Some(actor),
+      }
+      Some((target_row, granted))
+    }
+  }
+}
+
+///|
+fn apply_granted_status(
+  db : @sqlite.Database,
+  session : SessionRow,
+  row : CharacterRow,
+  granted : GrantedStatusRow,
+) -> Int raise TrpgFailure {
+  let modifier = modifier_spec_text(granted.ability, granted.amount)
+  let next_conditions = add_condition(
+    row.conditions_json,
+    granted.name,
+    "",
+    Some(modifier),
+    Some(1),
+    None,
+    Some("consume"),
+    granted.tags,
+    granted.source,
+  )
+  update_character_conditions(db, row.id, next_conditions)
+  let source_text = match granted.source {
+    Some(value) if !value.is_empty() => " / source=\{value}"
+    _ => ""
+  }
+  append_event(
+    db,
+    session.id,
+    "status",
+    granted.source,
+    Some(granted.target),
+    "\{granted.target}: status add \{granted.name}\{source_text}",
+    Json::object({
+      "operation": Json::string("add"),
+      "status_name": Json::string(granted.name),
+      "source": match granted.source {
+        Some(value) => Json::string(value)
+        None => Json::null()
+      },
+      "auto_granted": Json::boolean(true),
+      "effects": Json::array([
+        effect_json(granted.ability, granted.amount, granted.tags, "roll"),
+      ]),
+      "uses": j_int(1),
+      "on_trigger": Json::string("consume"),
+      "target": Json::string(granted.target),
+    }).stringify(),
+  )
+}
+
+///|
 fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let actor = need_pos(positions, 1, "actor name")
@@ -769,9 +929,11 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   defer db.close()
   let session = require_active_session(db)
   let row = require_character(db, session.id, actor)
+  let grant_plan = resolve_grant_status(db, session.id, actor, global.args)
   let scenario = load_scenario_json(session.scenario_id)
   let current_scene = require_scenario_scene(scenario, session.current_scene)
   let scene_default = flag_present(global.args, "--scene-default")
+  let prep = flag_present(global.args, "--prep")
   let scene_tags = if scene_default {
     scene_difficulty_tags(current_scene)
   } else {
@@ -812,21 +974,37 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let target = match option_value(global.args, "--target") {
     Some(value) => Some(parse_int_arg(value, "target"))
     None =>
-      if scene_default {
+      if prep {
+        Some(
+          prep_target(
+            if scene_default {
+              scene_difficulty_target(current_scene)
+            } else {
+              None
+            },
+          ),
+        )
+      } else if scene_default {
         scene_difficulty_target(current_scene)
       } else {
         None
       }
   }
-  let scene_warning = if scene_default {
-    match scene_difficulty_stat(current_scene) {
-      Some(value) if value != ability =>
-        Some("scene default stat is \{value}, but roll uses \{ability}")
-      _ => None
-    }
-  } else {
-    None
+  match grant_plan {
+    Some(_) =>
+      if target == None {
+        fail(
+          TrpgError::Usage(
+            "granting support requires a resolved target",
+            Some(
+              "use `--prep`, `--target N`, or `--scene-default` together with `--grant`",
+            ),
+          ),
+        )
+      }
+    None => ()
   }
+  let scene_warning = None
   let bonus = match option_value(global.args, "--bonus") {
     Some(value) => parse_int_arg(value, "bonus")
     None => 0
@@ -840,6 +1018,14 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
       resolved.consumed_statuses,
     )
     update_character_conditions(db, row.id, next_conditions)
+  }
+  let granted_status = match grant_plan {
+    Some((_, granted)) if resolved.outcome == "HIT" => {
+      let target_row = require_character(db, session.id, granted.target)
+      ignore(apply_granted_status(db, session, target_row, granted))
+      Some(granted)
+    }
+    _ => None
   }
   let roll_id = insert_roll_record(
     db,
@@ -876,6 +1062,10 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
       }
     _ => ()
   }
+  match granted_status {
+    Some(value) => event_data["granted_status"] = grant_status_json(value)
+    None => ()
+  }
   let event_id = append_event(
     db,
     session.id,
@@ -899,11 +1089,22 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
       }
     _ => ()
   }
+  match granted_status {
+    Some(value) => json["granted_status"] = grant_status_json(value)
+    None => ()
+  }
   match context {
     Some(value) => json["context"] = Json::string(value)
     None => ()
   }
-  json_success(Json::object(json), format_actor_roll(resolved), global)
+  let human = match granted_status {
+    Some(value) =>
+      format_actor_roll(resolved) +
+      "\ngranted_status: " +
+      format_granted_status(value)
+    None => format_actor_roll(resolved)
+  }
+  json_success(Json::object(json), human, global)
 }
 
 ///|
@@ -1082,6 +1283,7 @@ fn dispatch_status(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let name = need_pos(positions, 1, "character name")
   let op = need_pos(positions, 2, "status operation")
   let note = option_value(global.args, "--note").unwrap_or("")
+  let source_name = option_value(global.args, "--source")
   let tags = parse_tags_csv(option_value(global.args, "--tags"))
   let db = open_db()
   defer db.close()
@@ -1143,6 +1345,7 @@ fn dispatch_status(global : GlobalArgs) -> RunResult raise TrpgFailure {
         option_value(global.args, "--duration"),
         option_value(global.args, "--on-trigger"),
         tags,
+        source_name,
       )
     "remove" => remove_condition(row.conditions_json, status_name)
     _ => row.conditions_json
@@ -1154,21 +1357,36 @@ fn dispatch_status(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "operation": Json::string(op),
     "status_name": Json::string(status_name),
     "tag": Json::string(status_name),
+    "source": match source_name {
+      Some(value) => Json::string(value)
+      None => Json::null()
+    },
     "conditions": parse_json(conditions_json, "conditions_json"),
   })
-  let event_text = "\{name}: status \{op} \{status_name}"
+  let event_text = match source_name {
+    Some(value) if op == "add" && !value.is_empty() =>
+      "\{name}: status \{op} \{status_name} / source=\{value}"
+    _ => "\{name}: status \{op} \{status_name}"
+  }
   ignore(
     append_event(
       db,
       session.id,
       "status",
-      Some("gm"),
+      match source_name {
+        Some(value) => Some(value)
+        None => Some("gm")
+      },
       Some(name),
       event_text,
       Json::object({
         "operation": Json::string(op),
         "status_name": Json::string(status_name),
         "tag": Json::string(status_name),
+        "source": match source_name {
+          Some(value) => Json::string(value)
+          None => Json::null()
+        },
         "tags": Json::array(tags.map(value => Json::string(value))),
         "conditions": parse_json(conditions_json, "conditions_json"),
       }).stringify(),
@@ -1187,6 +1405,7 @@ fn add_condition(
   duration : String?,
   on_trigger : String?,
   tags : Array[String],
+  source_name : String?,
 ) -> String raise TrpgFailure {
   let arr = match parse_json(source, "conditions_json") {
     Array(items) => items
@@ -1205,6 +1424,11 @@ fn add_condition(
       ])
     }
     None => ()
+  }
+  match source_name {
+    Some(value) if !value.is_empty() =>
+      condition["source"] = Json::string(value)
+    _ => ()
   }
   match uses {
     Some(value) => condition["uses"] = j_int(value)
@@ -1419,6 +1643,7 @@ fn item_give(global : GlobalArgs) -> RunResult raise TrpgFailure {
     Json::object({
       "operation": Json::string("give"),
       "item": Json::string(item),
+      "item_id": Json::string(item),
       "effect": match effect {
         Some(value) => Json::string(value)
         None => Json::null()
@@ -1473,6 +1698,7 @@ fn item_drop(global : GlobalArgs) -> RunResult raise TrpgFailure {
     Json::object({
       "operation": Json::string("drop"),
       "item": Json::string(item),
+      "item_id": Json::string(item),
       "inventory": Json::array(
         inventory_from_sheet_json(updated.sheet_json).map(value => {
           Json::string(value)
@@ -1906,7 +2132,23 @@ fn format_scenario_goals(scenario : Json) -> String {
     let id = json_string_field(goal, "id", "goal")
     let kind = json_string_field(goal, "kind", "")
     let outcome = json_string_field(goal, "outcome", "success")
-    lines.push("- \{id} [\{outcome}] \{kind}")
+    let summary = match kind {
+      "inventory_contains" => {
+        let item_id = json_string_field(goal, "item_id", "")
+        "inventory_contains(\{item_id})"
+      }
+      "inventory_ever_contained" => {
+        let item_id = json_string_field(goal, "item_id", "")
+        "inventory_ever_contained(\{item_id})"
+      }
+      "scene_flag" => {
+        let scene_key = json_string_field(goal, "scene", "")
+        let flag = json_string_field(goal, "flag", "")
+        "scene_flag(\{scene_key}.\{flag})"
+      }
+      _ => kind
+    }
+    lines.push("- \{id} [\{outcome}] \{summary}")
   }
   if lines.length() == 0 {
     "(なし)"

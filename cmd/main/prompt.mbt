@@ -6,10 +6,11 @@ const RULES_TEXT : String =
   #|- 難易度は易 7 / 並 9 / 難 11。
   #|- 能力値は body / tech / mind。actor-aware `trpg roll <name> --stat ...` は能力値を修正値に加算する。
   #|- traits / inventory item / status は `effect.stat == --stat` かつ tag が一致したときだけ自動適用される。GM は必要に応じて場面 tag を追加してよい。
-  #|- 搦め手・準備・援護で scene の難易度を流用するときは `trpg roll <name> --scene-default --stat <other>` を優先し、scene target を個別変更したいときだけ `--target N` を明示する。
-  #|- 準備や援護の成功は `trpg status 名前 add --name 効果名 --modifier tech:+1 --tags ritual,seal --uses 1 --on-trigger consume` のような一時 status で表現してよい。本命ロールの stat に合わせて積む。
+  #|- 搦め手で scene の難易度を流用するときは `trpg roll <name> --scene-default --stat <other>` を優先する。準備・援護は原則 `trpg roll <name> --prep --stat <body|tech|mind>` を使い、scene target を個別変更したいときだけ `--target N` を明示する。
+  #|- 準備や援護の成功は `trpg roll orion --prep --grant-to alice --grant tech:+1@ritual,seal` のように一時 status を自動付与してよい。手動なら `trpg status 名前 add --name 効果名 --source 援護者 --modifier tech:+1 --tags ritual,seal --uses 1 --on-trigger consume` を使う。本命ロールの stat に合わせて積む。
   #|- 数値判定は必ず `trpg roll`、HP 変動は必ず `trpg hp`、状態は必ず `trpg status` を使う。
   #|- goal に `scene_flag(...)` がある場合は `trpg scene flag` で進捗を更新する。
+  #|- `special=crit` は難度 1 段階軽減相当、または `+2〜+3 / uses=1` の援護 status、または副次好機 1 つの目安として扱う。`special=fumble` は一段重く扱う。
   #|- プレイヤーは 1 ターンに 1 行動だけ宣言し、自分で数値結果を決めない。
 
 ///|
@@ -140,9 +141,9 @@ fn compose_gm_prompt(
   format_history_for_prompt(history) +
   "\n\n" +
   "## GM 手順\n" +
-  "- 判定が必要なときは `trpg roll 名前 --scene-default --stat tech --tags lockpick --context \"状況\"` のように actor-aware roll を使い、JSON の `outcome` / `margin` / `special` を引用する。scene target を個別変更したいときだけ `--target N` を明示する。\n" +
+  "- 判定が必要なときは `trpg roll 名前 --scene-default --stat tech --tags lockpick --context \"状況\"` のように actor-aware roll を使い、JSON の `outcome` / `margin` / `special` を引用する。準備・援護は `--prep` を優先し、scene target を個別変更したいときだけ `--target N` を明示する。\n" +
   "- HP 変動は `trpg hp 名前 -3 --context \"理由\"` のように CLI で更新する。\n" +
-  "- 状態は `trpg status 名前 add --name 毒 --note \"効果量/継続条件/消費トリガー\" --modifier tech:-2 --tags ritual,seal --uses 1 --on-trigger consume` のように CLI で更新する。準備や援護の成功も `uses=1` status で残してよい。\n" +
+  "- 状態は `trpg status 名前 add --name 毒 --source 司書の亡霊 --note \"効果量/継続条件/消費トリガー\" --modifier tech:-2 --tags ritual,seal --uses 1 --on-trigger consume` のように CLI で更新する。準備や援護は `--grant-to` / `--grant` で自動付与してよい。\n" +
   "- シーン転換時は `trpg session scene <id> [--note \"変化\"]` を使う。\n" +
   "- goal に `scene_flag(...)` がある場合は `trpg scene flag <key> <value>` を打つ。途中確認は `trpg session goals` を使う。\n" +
   "- アイテム獲得・喪失は `trpg item give/drop 名前 アイテム名 [--note \"理由\"]` を使う。\n" +

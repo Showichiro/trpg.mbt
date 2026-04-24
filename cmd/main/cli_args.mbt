@@ -55,6 +55,7 @@ fn option_takes_value(arg : String) -> Bool {
   arg == "--context" ||
   arg == "--by" ||
   arg == "--name" ||
+  arg == "--source" ||
   arg == "--note" ||
   arg == "--outcome" ||
   arg == "--for-roll" ||
@@ -68,6 +69,9 @@ fn option_takes_value(arg : String) -> Bool {
   arg == "--b-tags" ||
   arg == "--a-bonus" ||
   arg == "--b-bonus" ||
+  arg == "--grant-to" ||
+  arg == "--grant" ||
+  arg == "--grant-name" ||
   arg == "--atk" ||
   arg == "--def" ||
   arg == "--damage" ||
@@ -156,6 +160,7 @@ fn positional_args(args : Array[String]) -> Array[String] {
       i += 2
     } else if arg == "--if-not-exists" ||
       arg == "--brief" ||
+      arg == "--prep" ||
       arg == "--scene-default" ||
       arg == "--no-consume" {
       i += 1

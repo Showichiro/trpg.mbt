@@ -15,7 +15,7 @@
   "goals": [
     {
       "id": "recover-silver-key",
-      "kind": "inventory_contains",
+      "kind": "inventory_ever_contained",
       "actor": "any_pc",
       "item_id": "銀の鍵",
       "outcome": "success"

@@ -2,9 +2,18 @@
 test "positional args skip option values" {
   let args = [
     "status", "alice", "add", "--name", "斜光援護", "--modifier", "tech:+1",
-    "--target", "10", "--as", "alice", "--if-not-exists",
+    "--target", "10", "--as", "alice", "--source", "orion", "--if-not-exists",
   ]
   inspect(positional_args(args), content="[\"status\", \"alice\", \"add\"]")
+}
+
+///|
+test "positional args skip prep and grant flags" {
+  let args = [
+    "roll", "orion", "--prep", "--scene-default", "--stat", "mind", "--grant-to",
+    "alice", "--grant", "tech:+1@ritual,seal", "--grant-name", "譜面援護",
+  ]
+  inspect(positional_args(args), content="[\"roll\", \"orion\"]")
 }
 
 ///|

@@ -156,6 +156,61 @@ fn actor_has_item_id(
 }
 
 ///|
+fn event_item_matches_id(event : EventRow, item_id : String) -> Bool {
+  let data = parse_json(event.data_json, "event.data_json") catch {
+    _ => Json::object({})
+  }
+  let current_id = json_string_field(
+    data,
+    "item_id",
+    json_string_field(data, "item", ""),
+  )
+  current_id == item_id || json_string_field(data, "item", "") == item_id
+}
+
+///|
+fn actor_ever_had_item_id(
+  db : @sqlite.Database,
+  session : SessionRow,
+  actor : String,
+  item_id : String,
+) -> Bool raise TrpgFailure {
+  if actor == "any_pc" {
+    let pcs = list_characters(db, session.id).filter(row => row.kind == "pc")
+    for row in pcs {
+      if actor_has_item_id(row, item_id) {
+        return true
+      }
+    }
+    let events = list_events(db, session.id, Some("item"), None, 10000)
+    for event in events {
+      let is_pc = match event.subject {
+        Some(name) => string_array_contains(pcs.map(row => row.name), name)
+        None => false
+      }
+      if is_pc && event_item_matches_id(event, item_id) {
+        return true
+      }
+    }
+    false
+  } else {
+    let row = require_character(db, session.id, actor)
+    if actor_has_item_id(row, item_id) {
+      true
+    } else {
+      let events = list_events(db, session.id, Some("item"), None, 10000)
+      let mut found = false
+      for event in events {
+        if event.subject == Some(actor) && event_item_matches_id(event, item_id) {
+          found = true
+        }
+      }
+      found
+    }
+  }
+}
+
+///|
 fn condition_satisfied(
   db : @sqlite.Database,
   session : SessionRow,
@@ -177,6 +232,15 @@ fn condition_satisfied(
         found
       } else {
         actor_has_item_id(require_character(db, session.id, actor), item_id)
+      }
+    }
+    "inventory_ever_contained" => {
+      let actor = json_string_field(condition, "actor", "any_pc")
+      let item_id = json_string_field(condition, "item_id", "")
+      if item_id.is_empty() {
+        false
+      } else {
+        actor_ever_had_item_id(db, session, actor, item_id)
       }
     }
     "scene_flag" => {
@@ -218,6 +282,10 @@ fn goal_statuses(
       "inventory_contains" => {
         let item_id = json_string_field(goal, "item_id", "")
         "inventory_contains(\{item_id})"
+      }
+      "inventory_ever_contained" => {
+        let item_id = json_string_field(goal, "item_id", "")
+        "inventory_ever_contained(\{item_id})"
       }
       "scene_flag" => {
         let scene_key = json_string_field(goal, "scene", "")

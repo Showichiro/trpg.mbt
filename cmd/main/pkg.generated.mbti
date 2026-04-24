@@ -25,6 +25,8 @@ type GlobalArgs
 
 type GoalStatusRow
 
+type GrantedStatusRow
+
 type HistoryEntry
 
 type LogRow

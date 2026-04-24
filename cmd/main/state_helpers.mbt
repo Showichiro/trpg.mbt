@@ -37,6 +37,22 @@ fn parse_modifier_spec(spec : String) -> (String, Int) raise TrpgFailure {
 }
 
 ///|
+fn parse_modifier_with_tags_spec(
+  spec : String,
+) -> (String, Int, Array[String]) raise TrpgFailure {
+  match spec.split_once("@") {
+    Some((modifier_text, tags_text)) => {
+      let (ability, amount) = parse_modifier_spec(modifier_text.to_string())
+      (ability, amount, parse_tags_csv(Some(tags_text.to_string())))
+    }
+    None => {
+      let (ability, amount) = parse_modifier_spec(spec)
+      (ability, amount, [])
+    }
+  }
+}
+
+///|
 fn parse_tags_csv(source : String?) -> Array[String] {
   match source {
     Some(text) => {
@@ -231,6 +247,7 @@ fn modifier_preview_row(
   name : String,
   effect : Json,
   note : String,
+  source : String?,
   uses : Int?,
   duration : String?,
   on_trigger : String?,
@@ -240,6 +257,7 @@ fn modifier_preview_row(
     name,
     amount: json_int_field(effect, "amount", 0),
     tags: effect_tags(effect),
+    source,
     uses,
     duration,
     on_trigger,
@@ -287,7 +305,16 @@ fn trait_modifiers(
           )
         None =>
           matched.push(
-            modifier_preview_row("trait", name, effect, note, None, None, None),
+            modifier_preview_row(
+              "trait",
+              name,
+              effect,
+              note,
+              None,
+              None,
+              None,
+              None,
+            ),
           )
       }
     }
@@ -314,7 +341,16 @@ fn item_modifiers(
           )
         None =>
           matched.push(
-            modifier_preview_row("item", name, effect, note, None, None, None),
+            modifier_preview_row(
+              "item",
+              name,
+              effect,
+              note,
+              None,
+              None,
+              None,
+              None,
+            ),
           )
       }
     }
@@ -355,6 +391,7 @@ fn status_modifiers(
   for condition in conditions {
     let name = json_string_field(condition, "name", "status")
     let note = json_string_field(condition, "note", "")
+    let source_name = json_string_opt_field(condition, "source")
     let uses = json_int_opt_field(condition, "uses")
     let duration = json_string_opt_field(condition, "duration")
     let on_trigger = json_string_opt_field(condition, "on_trigger")
@@ -375,7 +412,7 @@ fn status_modifiers(
         None =>
           matched.push(
             modifier_preview_row(
-              "status", name, effect, note, uses, duration, on_trigger,
+              "status", name, effect, note, source_name, uses, duration, on_trigger,
             ),
           )
       }
@@ -653,6 +690,10 @@ fn modifier_preview_json(row : ModifierPreviewRow) -> Json {
     "tags": Json::array(row.tags.map(value => Json::string(value))),
     "note": Json::string(row.note),
   }
+  match row.source {
+    Some(value) => object["source"] = Json::string(value)
+    None => ()
+  }
   match row.uses {
     Some(value) => object["uses"] = j_int(value)
     None => ()
@@ -756,6 +797,10 @@ fn format_modifier_preview(row : ModifierPreviewRow) -> String {
   let parts : Array[String] = ["[\{row.kind}] \{row.name} \{amount_text}"]
   if !tags_text.is_empty() {
     parts.push(tags_text)
+  }
+  match row.source {
+    Some(value) if !value.is_empty() => parts.push("source=\{value}")
+    _ => ()
   }
   match row.uses {
     Some(value) => parts.push("uses=\{value}")

@@ -23,6 +23,15 @@ test "inventory helpers add and drop items" {
 }
 
 ///|
+test "modifier-with-tags spec parses support shorthand" {
+  inspect(
+    parse_modifier_with_tags_spec("tech:+1@ritual,seal"),
+    content="(\"tech\", 1, [\"ritual\", \"seal\"])",
+  )
+  inspect(parse_modifier_with_tags_spec("mind:+2"), content="(\"mind\", 2, [])")
+}
+
+///|
 test "roll preview sums only matching structured modifiers" {
   let row : CharacterRow = {
     id: 1,
@@ -31,7 +40,7 @@ test "roll preview sums only matching structured modifiers" {
     sheet_json: "{\"name\":\"alice\",\"inventory\":[\"短剣\"],\"traits\":[{\"name\":\"錠開け\",\"desc\":\"解錠で +1\",\"effects\":[{\"stat\":\"tech\",\"amount\":1,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}]},{\"name\":\"古文書読解\",\"desc\":\"儀式文脈で +1\",\"effects\":[{\"stat\":\"mind\",\"amount\":1,\"tags\":[\"ritual\",\"seal\"],\"trigger\":\"roll\"}]}],\"stats\":{\"body\":1,\"tech\":2,\"mind\":0}}",
     hp_cur: 8,
     hp_max: 8,
-    conditions_json: "[{\"name\":\"祝福\",\"note\":\"次の解錠判定 +2\",\"effects\":[{\"stat\":\"tech\",\"amount\":2,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}],\"uses\":1,\"on_trigger\":\"consume\"},{\"name\":\"疲労\",\"note\":\"体判定 -1\",\"modifier\":\"body:-1\"},{\"name\":\"封印補助\",\"note\":\"封印判定 +1\",\"effects\":[{\"stat\":\"tech\",\"amount\":1,\"tags\":[\"seal\"],\"trigger\":\"roll\"}],\"uses\":1}]",
+    conditions_json: "[{\"name\":\"祝福\",\"note\":\"次の解錠判定 +2\",\"source\":\"orion\",\"effects\":[{\"stat\":\"tech\",\"amount\":2,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}],\"uses\":1,\"on_trigger\":\"consume\"},{\"name\":\"疲労\",\"note\":\"体判定 -1\",\"modifier\":\"body:-1\"},{\"name\":\"封印補助\",\"note\":\"封印判定 +1\",\"effects\":[{\"stat\":\"tech\",\"amount\":1,\"tags\":[\"seal\"],\"trigger\":\"roll\"}],\"uses\":1}]",
   }
   let preview = roll_preview(row, "tech", ["lockpick"])
   inspect(preview.base_stat, content="2")
@@ -44,7 +53,7 @@ test "roll preview sums only matching structured modifiers" {
   )
   inspect(
     format_modifier_preview(preview.modifiers[1]),
-    content="[status] 祝福 +2 / tags=lockpick / uses=1 / on_trigger=consume / note=次の解錠判定 +2",
+    content="[status] 祝福 +2 / tags=lockpick / source=orion / uses=1 / on_trigger=consume / note=次の解錠判定 +2",
   )
   inspect(
     format_skipped_modifier(preview.skipped_modifiers[0]),
@@ -57,7 +66,7 @@ test "roll preview sums only matching structured modifiers" {
   inspect(preview.inventory, content="[\"短剣\"]")
   inspect(
     format_roll_preview("alice", preview),
-    content="alice tech 判定プレビュー\n能力値: 2\n自動修正合計: +3\n合計(能力値+自動修正): 5\n自動修正:\n- [trait] 錠開け +1 / tags=lockpick / note=解錠で +1\n- [status] 祝福 +2 / tags=lockpick / uses=1 / on_trigger=consume / note=次の解錠判定 +2\nskipped_sources:\n- [trait] 古文書読解 / stat_mismatch mind vs tech\n- [status] 疲労 / stat_mismatch body vs tech\n- [status] 封印補助 / tag_mismatch effect_tags=seal requested_tags=lockpick\n所持品: 短剣",
+    content="alice tech 判定プレビュー\n能力値: 2\n自動修正合計: +3\n合計(能力値+自動修正): 5\n自動修正:\n- [trait] 錠開け +1 / tags=lockpick / note=解錠で +1\n- [status] 祝福 +2 / tags=lockpick / source=orion / uses=1 / on_trigger=consume / note=次の解錠判定 +2\nskipped_sources:\n- [trait] 古文書読解 / stat_mismatch mind vs tech\n- [status] 疲労 / stat_mismatch body vs tech\n- [status] 封印補助 / tag_mismatch effect_tags=seal requested_tags=lockpick\n所持品: 短剣",
   )
 }
 
