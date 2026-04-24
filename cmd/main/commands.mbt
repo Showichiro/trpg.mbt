@@ -1272,6 +1272,21 @@ fn format_character_roll_preview(
 }
 
 ///|
+fn ensure_resolved_actor_roll_target(
+  target : Int?,
+  preview_only : Bool,
+) -> Unit raise TrpgFailure {
+  if !preview_only && target == None {
+    fail(
+      TrpgError::Usage(
+        "actor-aware roll requires a resolved target",
+        Some("use `--scene-default`, `--prep`, or `--target N` before rolling"),
+      ),
+    )
+  }
+}
+
+///|
 fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let actor = need_pos(positions, 1, "actor name")
@@ -1346,20 +1361,7 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
     applied_scene_modifiers,
     remaining_scene_modifiers,
   ) = apply_scene_modifiers(scene_modifiers, ability, tags, base_target)
-  match grant_plan {
-    Some(_) =>
-      if target == None {
-        fail(
-          TrpgError::Usage(
-            "granting support requires a resolved target",
-            Some(
-              "use `--prep`, `--target N`, or `--scene-default` together with `--grant`",
-            ),
-          ),
-        )
-      }
-    None => ()
-  }
+  ensure_resolved_actor_roll_target(target, preview_only)
   let scene_warning : String? = None
   let bonus = match option_value(global.args, "--bonus") {
     Some(value) => parse_int_arg(value, "bonus")

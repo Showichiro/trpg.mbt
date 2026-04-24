@@ -31,3 +31,23 @@ test "grant on-trigger parser accepts consume and persist" {
   inspect(normalize_grant_on_trigger("consume"), content="consume")
   inspect(normalize_grant_on_trigger("persist"), content="persist")
 }
+
+///|
+test "actor-aware roll requires resolved target unless preview" {
+  let err = try? ensure_resolved_actor_roll_target(None, false)
+  inspect(
+    match err {
+      Ok(_) => false
+      Err(_) => true
+    },
+    content="true",
+  )
+  let ok = try? ensure_resolved_actor_roll_target(None, true)
+  inspect(
+    match ok {
+      Ok(_) => true
+      Err(_) => false
+    },
+    content="true",
+  )
+}

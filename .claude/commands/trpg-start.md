@@ -11,19 +11,21 @@ TRPG GM skill を使って TRPG を開始してください。
 
 - active session がある場合は、そのまま再開してください。
 - active session が無い場合は、**最初に参加人数と参加 PC を確認してください**。
-- 参加人数または参加 PC が未確定のまま `trpg session init forgotten_library --if-not-exists` / `trpg pc add` / `trpg prompt gm --human` を実行してゲームを始めないでください。
-- fresh start で人数だけ指定された場合は、1 人なら `alice`、2 人なら `alice` と `orion` を既定候補として提案してください。
-- fresh start では `trpg scenario show forgotten_library` を確認し、goal に `scene_flag(...)` がある場合は対応シーンで `trpg scene flag` を使ってください。
+- 参加人数または参加 PC が未確定のまま `trpg session init <scenario_id> --if-not-exists` / `trpg pc add` / `trpg prompt gm --human` を実行してゲームを始めないでください。
+- fresh start では先に `trpg scenario show <scenario_id>` を確認し、`party_setup.default_participants` があればその人数の既定候補を提案してください。`party_setup` が無ければ `recommended_party_size.min` を見て、それも無ければ人数と参加 PC をそのまま確認してください。
+- fresh start では `trpg scenario show <scenario_id>` の goal も確認し、`scene_flag(...)` がある場合は対応シーンで `trpg scene flag` を使ってください。
 - opening では、雰囲気描写の直後に `body / tech / mind` の意味、各 PC の得意分野、準備 / 援護を挟めることだけを 3〜5 行で案内してください。
-- 判定は原則 `trpg roll <name> --scene-default --stat ... --tags ...` を使ってください。`--scene-default` と `--tags` は union され、override ではありません。準備・援護は `trpg roll <name> --prep ...` を優先してください。`--prep` は target 未指定時に現在 scene の target を 2 下げ、scene target が無いときは 9 を使います。`--prep --scene-default` は併用可で、target は prep、scene tags は scene-default 由来も使います。scene target 自体を変えるときだけ `--target N` を明示してください。
+- 判定は原則 `trpg roll <name> --scene-default --stat ... --tags ...` を使ってください。actor-aware の実ロールでは `--scene-default` / `--prep` / `--target N` のどれかで target を必ず解決してください。`--scene-default` と `--tags` は union され、override ではありません。準備・援護は `trpg roll <name> --prep ...` を優先してください。`--prep` は target 未指定時に現在 scene の target を 2 下げ、scene target が無いときは 9 を使います。`--prep --scene-default` は併用可で、target は prep、scene tags は scene-default 由来も使います。scene target 自体を変えるときだけ `--target N` を明示してください。
 - trait / item / status の auto-apply は `effect.stat == --stat` が必須です。tag 一致だけでは乗らないので、必要なら `skipped_sources` を確認してください。
 - custom tag を足すと既存 trait/item/status の tag 一致が外れて auto-apply が減ることがあります。まず既存 scene tag に丸め、auto-apply を意図的に変えたいときだけ新規 tag を足してください。
 - 準備・援護の成功は、原則 `trpg roll ... --grant-to <target> --grant tech:+1@ritual,seal` のように一時 status を自動付与してください。`--grant-name`、`--grant-uses`、`--grant-duration`、`--grant-on-trigger` は既存機能です。デフォルトは `uses=1 / on_trigger=consume / duration 指定なし` で、consume されるまで scene を跨いで残ります。今の実装では `duration 指定なし` と `duration=infinite` は同じです。self-grant しても構いません。手動で積むなら `trpg status ... add --name ... --source 援護者 --modifier ... --tags ritual,seal --uses 1 --on-trigger consume` を使い、本命ロールの stat に合わせてください。
-- ロール前に何が乗るかだけ確認したいときは `trpg roll <name> --preview ...` を使ってください。必要なら `--skip-status "状態名"` でそのロールだけ auto-apply を外せます。
+- 自動 grant は `HIT` 時だけ発動します。near miss の部分付与が必要なら `trpg status ... add` で amount を半減して最低 1 に丸めてください。
+- ロール前に何が乗るかだけ確認したいときは `trpg roll <name> --preview ...` を使ってください。target 11 の本命、複数 grant や scene modifier が重なる判定、off-stat 判定では preview を推奨します。必要なら `--skip-status "状態名"` でそのロールだけ auto-apply を外せます。
 - シーン遷移では `trpg scene list|show|next` と `trpg session scene <id>` を使ってください。
 - 途中の goal 確認には `trpg session goals` を使ってください。
 - `scene flag` を更新した直後も `trpg prompt gm --human` の再取得対象です。
 - 同じ障害で 2 連続 near miss なら `trpg scene progress <key> <delta>` を残してください。3 連続なら `trpg scene modifier add --name "扉が緩む" --next-roll target:-2 --stat tech --tags forced-entry` のように次判定を 1 段階易化して構いません。
+- 同じ障害で near miss 以外の MISS が 3 連続したら、その手筋は行き詰まりとして扱い、別ルート提示・敵対化・撤退提示のいずれかに進めてください。
 - near miss / fumble の軽減裁定は `trpg session note "HP 半減適用" --kind soften --ref-event <event_id>` のように残してください。
 - `duration=scene` の status は scene 遷移時に自動で消えます。
 - アイテムの新規取得は `item give`、受け渡しは `item transfer`、消耗・破棄は `item drop` を使ってください。受け渡し時にタグや効果を付け直すなら `trpg item transfer <from> <to> <item> --add-tags ritual,seal --set-effect mind:+1` を使います。
