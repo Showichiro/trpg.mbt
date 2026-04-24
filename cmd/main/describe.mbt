@@ -40,16 +40,16 @@ fn describe_commands_json() -> Json {
         "利用可能な PC template を表示する", "trpg pc templates list",
       ),
       "roll": command_descriptor(
-        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--bonus N] [--target N|--scene-default] [--tags tag1,tag2] [--context text]",
+        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--bonus N] [--target N|--scene-default] [--tags tag1,tag2] [--context text]  # alt-stat / 準備 / 援護は --target N を使う",
       ),
       "roll.history": command_descriptor(
         "判定履歴を表示する", "trpg roll history [--as name] [-n N]",
       ),
       "contest": command_descriptor(
-        "対抗判定を実行する", "trpg contest <actor_a> <actor_b> --a-stat <stat> --b-stat <stat> [--a-tags tags] [--b-tags tags] [--a-bonus N] [--b-bonus N] [--context text]",
+        "対抗判定を実行する", "trpg contest <actor_a> <actor_b> --a-stat <stat> --b-stat <stat> [--a-tags tag1,tag2] [--b-tags tag1,tag2] [--a-bonus N] [--b-bonus N] [--context text]",
       ),
       "attack": command_descriptor(
-        "攻撃判定を実行する", "trpg attack <attacker> <defender> --atk <stat> --def <stat> --damage <expr> [--atk-tags tags] [--def-tags tags] [--atk-bonus N] [--def-bonus N] [--context text]",
+        "攻撃判定を実行する", "trpg attack <attacker> <defender> --atk <stat> --def <stat> --damage <expr> [--atk-tags tag1,tag2] [--def-tags tag1,tag2] [--atk-bonus N] [--def-bonus N] [--context text]",
       ),
       "hp": command_descriptor(
         "HP を増減する", "trpg hp <name> <delta> [--by actor] [--context text]",

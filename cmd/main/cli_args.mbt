@@ -78,6 +78,74 @@ fn option_takes_value(arg : String) -> Bool {
 }
 
 ///|
+fn tag_option_takes_csv(arg : String) -> Bool {
+  arg == "--tags" ||
+  arg == "--a-tags" ||
+  arg == "--b-tags" ||
+  arg == "--atk-tags" ||
+  arg == "--def-tags"
+}
+
+///|
+fn has_multiple_space_separated_words(value : String) -> Bool {
+  let mut count = 0
+  for piece in value.split(" ") {
+    if !piece.is_empty() {
+      count += 1
+    }
+  }
+  count > 1
+}
+
+///|
+fn validate_csv_tag_options(args : Array[String]) -> Unit raise TrpgFailure {
+  let mut i = 0
+  while i < args.length() {
+    let arg = args[i]
+    if tag_option_takes_csv(arg) {
+      match args.get(i + 1) {
+        Some(value) => {
+          if value.has_prefix("-") || has_multiple_space_separated_words(value) {
+            fail(
+              TrpgError::Usage(
+                "invalid \{arg} value: \{value}",
+                Some(
+                  "multiple tags must be comma-separated, e.g. `\{arg} ritual,seal`",
+                ),
+              ),
+            )
+          }
+          match args.get(i + 2) {
+            Some(next) if !next.has_prefix("-") =>
+              fail(
+                TrpgError::Usage(
+                  "invalid \{arg} syntax",
+                  Some(
+                    "multiple tags must be comma-separated, e.g. `\{arg} ritual,seal`",
+                  ),
+                ),
+              )
+            _ => ()
+          }
+        }
+        None =>
+          fail(
+            TrpgError::Usage(
+              "missing value for \{arg}",
+              Some("use `\{arg} ritual,seal`"),
+            ),
+          )
+      }
+      i += 2
+    } else if option_takes_value(arg) {
+      i += 2
+    } else {
+      i += 1
+    }
+  }
+}
+
+///|
 fn positional_args(args : Array[String]) -> Array[String] {
   let out : Array[String] = []
   let mut i = 0

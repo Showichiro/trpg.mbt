@@ -6,6 +6,8 @@ const RULES_TEXT : String =
   #|- 難易度は易 7 / 並 9 / 難 11。
   #|- 能力値は body / tech / mind。actor-aware `trpg roll <name> --stat ...` は能力値を修正値に加算する。
   #|- traits / inventory item / status は tag が一致したとき自動適用される。GM は必要に応じて場面 tag を追加してよい。
+  #|- `--scene-default` を使えない搦め手・準備・援護判定では `trpg roll <name> --stat ... --target N` を明示する。
+  #|- 準備や援護の成功は `trpg status 名前 add 効果名 --modifier tech:+1 --tags ritual,seal --uses 1 --on-trigger consume` のような一時 status で表現してよい。
   #|- 数値判定は必ず `trpg roll`、HP 変動は必ず `trpg hp`、状態は必ず `trpg status` を使う。
   #|- goal に `scene_flag(...)` がある場合は `trpg scene flag` で進捗を更新する。
   #|- プレイヤーは 1 ターンに 1 行動だけ宣言し、自分で数値結果を決めない。
@@ -138,9 +140,9 @@ fn compose_gm_prompt(
   format_history_for_prompt(history) +
   "\n\n" +
   "## GM 手順\n" +
-  "- 判定が必要なときは `trpg roll 名前 --stat tech --scene-default --tags lockpick --context \"状況\"` のように actor-aware roll を使い、JSON の `outcome` / `margin` / `special` を引用する。\n" +
+  "- 判定が必要なときは `trpg roll 名前 --stat tech --scene-default --tags lockpick --context \"状況\"` のように actor-aware roll を使い、JSON の `outcome` / `margin` / `special` を引用する。scene default を使えない搦め手・準備・援護は `--target N` を明示する。\n" +
   "- HP 変動は `trpg hp 名前 -3 --context \"理由\"` のように CLI で更新する。\n" +
-  "- 状態は `trpg status 名前 add 毒 --note \"効果量/継続条件/消費トリガー\" --modifier tech:-2 --uses 1 --on-trigger consume` のように CLI で更新する。\n" +
+  "- 状態は `trpg status 名前 add 毒 --note \"効果量/継続条件/消費トリガー\" --modifier tech:-2 --tags ritual,seal --uses 1 --on-trigger consume` のように CLI で更新する。準備や援護の成功も `uses=1` status で残してよい。\n" +
   "- シーン転換時は `trpg session scene <id> [--note \"変化\"]` を使う。\n" +
   "- goal に `scene_flag(...)` がある場合は `trpg scene flag <key> <value>` を打つ。途中確認は `trpg session goals` を使う。\n" +
   "- アイテム獲得・喪失は `trpg item give/drop 名前 アイテム名 [--note \"理由\"]` を使う。\n" +

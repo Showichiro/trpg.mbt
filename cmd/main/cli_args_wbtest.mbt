@@ -13,3 +13,25 @@ test "global flags are removed from command args" {
   inspect(parsed.human, content="true")
   inspect(parsed.args, content="[\"session\", \"show\"]")
 }
+
+///|
+test "csv tag options accept comma-separated values" {
+  validate_csv_tag_options([
+    "status", "alice", "add", "儀式譜面", "--tags", "ritual,seal", "--uses",
+    "1",
+  ])
+}
+
+///|
+test "csv tag options reject whitespace-separated trailing tags" {
+  let err = try? validate_csv_tag_options([
+    "status", "alice", "add", "儀式譜面", "--tags", "ritual", "seal",
+  ])
+  inspect(
+    match err {
+      Ok(_) => false
+      Err(_) => true
+    },
+    content="true",
+  )
+}

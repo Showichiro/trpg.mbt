@@ -43,6 +43,7 @@ fn run(argv : Array[String]) -> RunResult {
         ),
       )
     }
+    validate_csv_tag_options(global.args)
     match global.args[0] {
       "version" => {
         let out = Json::object({ "command": "version", "version": VERSION })
