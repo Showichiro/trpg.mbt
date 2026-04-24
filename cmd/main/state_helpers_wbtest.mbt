@@ -51,3 +51,23 @@ test "roll preview sums only matching structured modifiers" {
     content="alice tech 判定プレビュー\n能力値: 2\n自動修正合計: +3\n合計(能力値+自動修正): 5\n自動修正:\n- [trait] 錠開け +1 / tags=lockpick / note=解錠で +1\n- [status] 祝福 +2 / tags=lockpick / uses=1 / on_trigger=consume / note=次の解錠判定 +2\n所持品: 短剣",
   )
 }
+
+///|
+test "actor roll includes base stat in total modifier" {
+  let row : CharacterRow = {
+    id: 1,
+    name: "alice",
+    kind: "pc",
+    sheet_json: "{\"name\":\"alice\",\"inventory\":[],\"traits\":[{\"name\":\"錠開け\",\"desc\":\"解錠で +1\",\"effects\":[{\"stat\":\"tech\",\"amount\":1,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}]}],\"stats\":{\"body\":1,\"tech\":2,\"mind\":0}}",
+    hp_cur: 8,
+    hp_max: 8,
+    conditions_json: "[{\"name\":\"祝福\",\"note\":\"次の解錠判定 +2\",\"effects\":[{\"stat\":\"tech\",\"amount\":2,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}],\"uses\":1,\"on_trigger\":\"consume\"}]",
+  }
+  let rolled = actor_roll(row, "tech", 1, Some(11), ["lockpick"], None)
+  inspect(rolled.base_stat, content="2")
+  inspect(rolled.auto_modifier_total, content="3")
+  inspect(rolled.bonus, content="1")
+  inspect(rolled.total_modifier, content="6")
+  inspect(rolled.expr, content="2d6+6")
+  inspect(rolled.margin != None, content="true")
+}

@@ -15,6 +15,9 @@ fn describe_commands_json() -> Json {
       "session.show": command_descriptor(
         "アクティブセッションを表示する", "trpg session show",
       ),
+      "session.goals": command_descriptor(
+        "現在の goal 達成状況を表示する", "trpg session goals",
+      ),
       "session.end": command_descriptor(
         "アクティブセッションを終了する", "trpg session end [--outcome success|failure|partial]",
       ),
@@ -85,7 +88,8 @@ fn describe_commands_json() -> Json {
         "遷移候補が1件なら次シーンへ進む", "trpg scene next [--note text]",
       ),
       "scene.flag": command_descriptor(
-        "現在シーンのフラグを設定する", "trpg scene flag <key> <value>",
+        "現在シーンのフラグを設定する (goal 条件の進行に使う)",
+        "trpg scene flag <key> <value>",
       ),
       "scenario.show": command_descriptor(
         "シナリオ定義を表示する", "trpg scenario show <scenario_id>",
@@ -94,10 +98,10 @@ fn describe_commands_json() -> Json {
         "シナリオ定義を検証する", "trpg scenario validate <scenario_id>",
       ),
       "prompt.gm": command_descriptor(
-        "GM 用プロンプトを合成する", "trpg prompt gm [--human]",
+        "GM 用プロンプトを合成する", "trpg prompt gm [--brief] [--human]",
       ),
       "prompt.player": command_descriptor(
-        "Player 用プロンプトを合成する", "trpg prompt player <name> [--human]",
+        "Player 用プロンプトを合成する", "trpg prompt player <name> [--brief] [--human]",
       ),
       "prompt.rules": command_descriptor(
         "ルール要約を出力する", "trpg prompt rules [--human]",

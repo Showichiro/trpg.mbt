@@ -30,12 +30,16 @@ trpg log add "扉を開けた" --as alice >/tmp/trpg-log-add.json
 trpg log show --kind roll -n 5 >/tmp/trpg-log-show.json
 trpg roll history --as alice -n 5 >/tmp/trpg-roll-history.json
 trpg scene show >/tmp/trpg-scene-show.json
+trpg session goals >/tmp/trpg-session-goals-before.json
 trpg scene next >/tmp/trpg-scene.json
 trpg contest alice "司書の亡霊" --a-stat tech --b-stat mind --a-tags ancient-text --b-tags ancient-text --context "貸出記録を読み解く" >/tmp/trpg-contest.json
+trpg prompt gm --brief >/tmp/trpg-prompt-gm-brief.json
+trpg prompt player alice --brief >/tmp/trpg-prompt-player-brief.json
 trpg prompt gm >/tmp/trpg-prompt-gm.json
 trpg prompt player alice >/tmp/trpg-prompt-player.json
 trpg scene next >/tmp/trpg-scene-next.json
 trpg scene flag sealed true >/tmp/trpg-flag.json
+trpg session goals >/tmp/trpg-session-goals-after.json
 trpg session report >/tmp/trpg-session-report.json
 trpg session end >/tmp/trpg-session-end.json
 

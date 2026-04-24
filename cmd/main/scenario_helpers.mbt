@@ -232,6 +232,30 @@ fn goal_statuses(
 }
 
 ///|
+fn goal_status_json(goal : GoalStatusRow) -> Json {
+  Json::object({
+    "id": Json::string(goal.id),
+    "outcome": Json::string(goal.outcome),
+    "satisfied": Json::boolean(goal.satisfied),
+    "summary": Json::string(goal.summary),
+  })
+}
+
+///|
+fn format_goal_statuses(goals : Array[GoalStatusRow]) -> String {
+  if goals.length() == 0 {
+    "(なし)"
+  } else {
+    goals
+    .map(goal => {
+      let mark = if goal.satisfied { "x" } else { " " }
+      "- [\{mark}] \{goal.id} (\{goal.outcome}) \{goal.summary}"
+    })
+    .join("\n")
+  }
+}
+
+///|
 fn derive_session_outcome(goals : Array[GoalStatusRow]) -> String {
   if goals.length() == 0 {
     "partial"

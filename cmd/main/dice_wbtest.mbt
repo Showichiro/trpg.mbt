@@ -28,3 +28,12 @@ test "roll outcome respects target" {
   inspect(roll_outcome(9, Some(10)), content="MISS")
   inspect(roll_outcome(9, None), content="NONE")
 }
+
+///|
+test "roll margin and special classify doubles" {
+  inspect(roll_margin(8, Some(9)), content="Some(-1)")
+  inspect(roll_margin(10, None), content="None")
+  inspect(roll_special([6, 6]), content="crit")
+  inspect(roll_special([1, 1]), content="fumble")
+  inspect(roll_special([3, 4]), content="none")
+}

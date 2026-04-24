@@ -108,13 +108,16 @@ struct ActorRollRow {
   actor : String
   ability : String
   base_stat : Int
+  auto_modifier_total : Int
   bonus : Int
-  modifier_total : Int
+  total_modifier : Int
   target : Int?
   expr : String
   total : Int
   rolls : Array[Int]
   outcome : String
+  margin : Int?
+  special : String
   modifiers : Array[ModifierPreviewRow]
   consumed_statuses : Array[String]
   scene_warning : String?

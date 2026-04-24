@@ -555,16 +555,18 @@ fn actor_roll(
   scene_warning : String?,
 ) -> ActorRollRow raise TrpgFailure {
   let preview = roll_preview(row, ability, tags)
-  let modifier_total = preview.auto_total + bonus
-  let sign = if modifier_total > 0 {
-    "+" + modifier_total.to_string()
-  } else if modifier_total < 0 {
-    modifier_total.to_string()
+  let total_modifier = preview.base_stat + preview.auto_total + bonus
+  let sign = if total_modifier > 0 {
+    "+" + total_modifier.to_string()
+  } else if total_modifier < 0 {
+    total_modifier.to_string()
   } else {
     ""
   }
   let expr = "2d6" + sign
   let evaluated = eval_dice(expr)
+  let margin = roll_margin(evaluated.total, target)
+  let special = roll_special(evaluated.rolls)
   let consumed_statuses = unique_strings(
     preview.modifiers
     .filter(source => {
@@ -576,13 +578,16 @@ fn actor_roll(
     actor: row.name,
     ability: preview.ability,
     base_stat: preview.base_stat,
+    auto_modifier_total: preview.auto_total,
     bonus,
-    modifier_total,
+    total_modifier,
     target,
     expr,
     total: evaluated.total,
     rolls: evaluated.rolls,
     outcome: roll_outcome(evaluated.total, target),
+    margin,
+    special,
     modifiers: preview.modifiers,
     consumed_statuses,
     scene_warning,
@@ -633,12 +638,15 @@ fn actor_roll_json(row : ActorRollRow) -> Json {
     "actor": Json::string(row.actor),
     "ability": Json::string(row.ability),
     "base_stat": j_int(row.base_stat),
+    "auto_modifier_total": j_int(row.auto_modifier_total),
     "bonus": j_int(row.bonus),
-    "modifier_total": j_int(row.modifier_total),
+    "total_modifier": j_int(row.total_modifier),
+    "modifier_total": j_int(row.total_modifier),
     "expr": Json::string(row.expr),
     "total": j_int(row.total),
     "rolls": json_int_array(row.rolls),
     "outcome": Json::string(row.outcome),
+    "special": Json::string(row.special),
     "sources": Json::array(row.modifiers.map(modifier_preview_json)),
     "consumed_statuses": Json::array(
       row.consumed_statuses.map(value => Json::string(value)),
@@ -647,6 +655,10 @@ fn actor_roll_json(row : ActorRollRow) -> Json {
   match row.target {
     Some(value) => object["target"] = j_int(value)
     None => object["target"] = Json::null()
+  }
+  match row.margin {
+    Some(value) => object["margin"] = j_int(value)
+    None => object["margin"] = Json::null()
   }
   match row.scene_warning {
     Some(value) => object["scene_warning"] = Json::string(value)
@@ -722,6 +734,15 @@ fn format_actor_roll(row : ActorRollRow) -> String {
     Some(value) => " / target=\{value}"
     None => ""
   }
+  let margin_text = match row.margin {
+    Some(value) => " / margin=\{value}"
+    None => ""
+  }
+  let special_text = if row.special == "none" {
+    ""
+  } else {
+    " / special=\{row.special}"
+  }
   let warning_text = match row.scene_warning {
     Some(value) if !value.is_empty() => "\nwarning: \{value}"
     _ => ""
@@ -736,7 +757,8 @@ fn format_actor_roll(row : ActorRollRow) -> String {
   } else {
     row.consumed_statuses.join(", ")
   }
-  "\{row.actor} \{row.expr} = \{row.total}\{target_text} / \{row.outcome}\n" +
+  "\{row.actor} \{row.expr} = \{row.total}\{target_text} / \{row.outcome}\{margin_text}\{special_text}\n" +
+  "base_stat=\{row.base_stat} auto_modifier_total=\{row.auto_modifier_total} bonus=\{row.bonus} total_modifier=\{row.total_modifier}\n" +
   "sources:\n" +
   sources +
   "\nconsumed_statuses: " +

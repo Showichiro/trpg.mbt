@@ -23,6 +23,7 @@ fn dispatch_session(global : GlobalArgs) -> RunResult raise TrpgFailure {
   match verb {
     "init" => session_init(global)
     "show" => session_show(global)
+    "goals" => session_goals(global)
     "end" => session_end(global)
     "report" => session_report(global)
     "scene" => session_scene(global)
@@ -31,7 +32,7 @@ fn dispatch_session(global : GlobalArgs) -> RunResult raise TrpgFailure {
       fail(
         TrpgError::Usage(
           "unknown session verb: \{verb}",
-          Some("supported verbs: init, show, end, report, scene, note"),
+          Some("supported verbs: init, show, goals, end, report, scene, note"),
         ),
       )
   }
@@ -156,21 +157,37 @@ fn session_end(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "scenario_id": Json::string(session.scenario_id),
     "outcome": Json::string(outcome),
     "event_id": j_int(event_id),
-    "goals": Json::array(
-      goals.map(goal => {
-        Json::object({
-          "id": Json::string(goal.id),
-          "outcome": Json::string(goal.outcome),
-          "satisfied": Json::boolean(goal.satisfied),
-          "summary": Json::string(goal.summary),
-        })
-      }),
-    ),
+    "goals": Json::array(goals.map(goal_status_json)),
     "active": false,
   })
   json_success(
     json,
     "セッション終了: \{session.scenario_id} / outcome=\{outcome}",
+    global,
+  )
+}
+
+///|
+fn session_goals(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let scenario = load_scenario_json(session.scenario_id)
+  let goals = goal_statuses(db, session, scenario)
+  let derived_outcome = derive_session_outcome(goals)
+  let json = Json::object({
+    "command": "session.goals",
+    "session": session_json(session),
+    "derived_outcome": Json::string(derived_outcome),
+    "goals": Json::array(goals.map(goal_status_json)),
+  })
+  let human = "session: \{session.scenario_id}\n" +
+    "scene: \{session.current_scene}\n" +
+    "derived_outcome: \{derived_outcome}\n\n" +
+    "## goals\n" +
+    format_goal_statuses(goals)
+  output_success(
+    { json, human, stderr: "session.goals: \{session.scenario_id}" },
     global,
   )
 }
@@ -220,12 +237,7 @@ fn session_report(global : GlobalArgs) -> RunResult raise TrpgFailure {
     })
     .join("\n")
   }
-  let goal_lines = goals
-    .map(goal => {
-      let mark = if goal.satisfied { "x" } else { " " }
-      "- [\{mark}] \{goal.id} (\{goal.outcome}) \{goal.summary}"
-    })
-    .join("\n")
+  let goal_lines = format_goal_statuses(goals)
   let human = "session: \{session.scenario_id}\n" +
     "outcome: \{outcome}\n" +
     "scene: \{session.current_scene}\n\n" +
@@ -239,16 +251,7 @@ fn session_report(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "command": "session.report",
     "session": session_json(session),
     "outcome": Json::string(outcome),
-    "goals": Json::array(
-      goals.map(goal => {
-        Json::object({
-          "id": Json::string(goal.id),
-          "outcome": Json::string(goal.outcome),
-          "satisfied": Json::boolean(goal.satisfied),
-          "summary": Json::string(goal.summary),
-        })
-      }),
-    ),
+    "goals": Json::array(goals.map(goal_status_json)),
     "characters": Json::array(characters.map(row_to_character_json)),
     "events": Json::array(
       key_events.map(event => {
@@ -663,6 +666,8 @@ fn raw_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let context = option_value(global.args, "--context")
   let roll = eval_dice(expr)
   let outcome = roll_outcome(roll.total, target)
+  let margin = roll_margin(roll.total, target)
+  let special = roll_special(roll.rolls)
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
@@ -685,6 +690,8 @@ fn raw_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
     roll.total,
     target,
     outcome,
+    margin,
+    special,
     context,
   )
   let event_id = append_event(
@@ -699,12 +706,18 @@ fn raw_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
       "expr": Json::string(expr),
       "total": j_int(roll.total),
       "rolls": json_int_array(roll.rolls),
+      "total_modifier": j_int(roll.mod),
       "modifier_total": j_int(roll.mod),
       "target": match target {
         Some(v) => j_int(v)
         None => Json::null()
       },
       "outcome": Json::string(outcome),
+      "margin": match margin {
+        Some(v) => j_int(v)
+        None => Json::null()
+      },
+      "special": Json::string(special),
     }).stringify(),
   )
   let json = Json::object({
@@ -714,11 +727,17 @@ fn raw_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "total": j_int(roll.total),
     "rolls": json_int_array(roll.rolls),
     "mod": j_int(roll.mod),
+    "total_modifier": j_int(roll.mod),
     "target": match target {
       Some(v) => j_int(v)
       None => Json::null()
     },
     "outcome": Json::string(outcome),
+    "margin": match margin {
+      Some(v) => j_int(v)
+      None => Json::null()
+    },
+    "special": Json::string(special),
     "roll_id": j_int(roll_id),
     "event_id": j_int(event_id),
   })
@@ -726,9 +745,18 @@ fn raw_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
     Some(v) => " (target \{v} -> \{outcome})"
     None => ""
   }
+  let margin_text = match margin {
+    Some(v) => " / margin=\{v}"
+    None => ""
+  }
+  let special_text = if special == "none" {
+    ""
+  } else {
+    " / special=\{special}"
+  }
   json_success(
     json,
-    "\{expr} = \{roll.breakdown} = \{roll.total}\{target_text}",
+    "\{expr} = \{roll.breakdown} = \{roll.total}\{target_text}\{margin_text}\{special_text}",
     global,
   )
 }
@@ -819,7 +847,7 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
     resolved.expr,
     resolved.total,
     resolved.rolls,
-    resolved.modifier_total,
+    resolved.total_modifier,
     target,
     resolved.outcome,
     Some(actor),
@@ -831,6 +859,8 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
     resolved.total,
     target,
     resolved.outcome,
+    resolved.margin,
+    resolved.special,
     context,
   )
   let event_data : Map[String, Json] = {
@@ -925,17 +955,28 @@ fn roll_event_text(
   total : Int,
   target : Int?,
   outcome : String,
+  margin : Int?,
+  special : String,
   context : String?,
 ) -> String {
   let target_text = match target {
     Some(value) => " / target=\{value}"
     None => ""
   }
+  let margin_text = match margin {
+    Some(value) => " / margin=\{value}"
+    None => ""
+  }
+  let special_text = if special == "none" {
+    ""
+  } else {
+    " / special=\{special}"
+  }
   let context_text = match context {
     Some(value) if !value.is_empty() => " / \{value}"
     _ => ""
   }
-  "判定 \{actor}: \{expr} = \{total}\{target_text} / \{outcome}\{context_text}"
+  "判定 \{actor}: \{expr} = \{total}\{target_text} / \{outcome}\{margin_text}\{special_text}\{context_text}"
 }
 
 ///|
@@ -1971,7 +2012,7 @@ fn dispatch_contest(global : GlobalArgs) -> RunResult raise TrpgFailure {
     roll_a.expr,
     roll_a.total,
     roll_a.rolls,
-    roll_a.modifier_total,
+    roll_a.total_modifier,
     target,
     roll_a.outcome,
     Some(actor_a),
@@ -1983,7 +2024,7 @@ fn dispatch_contest(global : GlobalArgs) -> RunResult raise TrpgFailure {
     roll_b.expr,
     roll_b.total,
     roll_b.rolls,
-    roll_b.modifier_total,
+    roll_b.total_modifier,
     target,
     roll_b.outcome,
     Some(actor_b),
@@ -2002,6 +2043,8 @@ fn dispatch_contest(global : GlobalArgs) -> RunResult raise TrpgFailure {
         roll_a.total,
         target,
         roll_a.outcome,
+        roll_a.margin,
+        roll_a.special,
         contest_context_text(context, actor_a, actor_b),
       ),
       actor_roll_json(roll_a).stringify(),
@@ -2020,6 +2063,8 @@ fn dispatch_contest(global : GlobalArgs) -> RunResult raise TrpgFailure {
         roll_b.total,
         target,
         roll_b.outcome,
+        roll_b.margin,
+        roll_b.special,
         contest_context_text(context, actor_a, actor_b),
       ),
       actor_roll_json(roll_b).stringify(),
@@ -2169,7 +2214,7 @@ fn dispatch_attack(global : GlobalArgs) -> RunResult raise TrpgFailure {
       roll_atk.expr,
       roll_atk.total,
       roll_atk.rolls,
-      roll_atk.modifier_total,
+      roll_atk.total_modifier,
       None,
       roll_atk.outcome,
       Some(attacker),
@@ -2189,6 +2234,8 @@ fn dispatch_attack(global : GlobalArgs) -> RunResult raise TrpgFailure {
         roll_atk.total,
         None,
         roll_atk.outcome,
+        roll_atk.margin,
+        roll_atk.special,
         contest_text,
       ),
       actor_roll_json(roll_atk).stringify(),
@@ -2201,7 +2248,7 @@ fn dispatch_attack(global : GlobalArgs) -> RunResult raise TrpgFailure {
       roll_def.expr,
       roll_def.total,
       roll_def.rolls,
-      roll_def.modifier_total,
+      roll_def.total_modifier,
       None,
       roll_def.outcome,
       Some(defender),
@@ -2221,6 +2268,8 @@ fn dispatch_attack(global : GlobalArgs) -> RunResult raise TrpgFailure {
         roll_def.total,
         None,
         roll_def.outcome,
+        roll_def.margin,
+        roll_def.special,
         contest_text,
       ),
       actor_roll_json(roll_def).stringify(),

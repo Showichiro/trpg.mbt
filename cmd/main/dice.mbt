@@ -101,3 +101,22 @@ fn roll_outcome(total : Int, target : Int?) -> String {
     None => "NONE"
   }
 }
+
+///|
+fn roll_margin(total : Int, target : Int?) -> Int? {
+  match target {
+    Some(value) => Some(total - value)
+    None => None
+  }
+}
+
+///|
+fn roll_special(rolls : Array[Int]) -> String {
+  if rolls.length() == 2 && rolls[0] == 6 && rolls[1] == 6 {
+    "crit"
+  } else if rolls.length() == 2 && rolls[0] == 1 && rolls[1] == 1 {
+    "fumble"
+  } else {
+    "none"
+  }
+}
