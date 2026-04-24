@@ -22,7 +22,7 @@ trpg pc templates list >/tmp/trpg-pc-templates.json
 trpg pc add alice --template alice >/tmp/trpg-pc-add.json
 trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show.json
 trpg roll alice --stat body --scene-default --context "入口の扉を押し開ける" >/tmp/trpg-roll-open.json
-trpg status alice add 祝福 --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume >/tmp/trpg-status.json
+trpg status alice add --name 祝福 --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume >/tmp/trpg-status.json
 trpg roll alice --stat tech --tags forced-entry --target 10 --context "扉の解錠" >/tmp/trpg-roll.json
 trpg roll alice --stat mind --target 9 --tags ritual,seal --context "譜面を読み替えて補助線を探る" >/tmp/trpg-roll-alt-target.json
 trpg hp alice -3 --context "扉の反動" >/tmp/trpg-hp.json
@@ -33,6 +33,7 @@ trpg roll history --as alice -n 5 >/tmp/trpg-roll-history.json
 trpg scene show >/tmp/trpg-scene-show.json
 trpg session goals >/tmp/trpg-session-goals-before.json
 trpg scene next >/tmp/trpg-scene.json
+trpg roll alice --scene-default --stat tech --tags ancient-text --context "蔵書の間で搦め手に記録を探る" >/tmp/trpg-roll-scene-default-override.json
 trpg contest alice "司書の亡霊" --a-stat tech --b-stat mind --a-tags ancient-text --b-tags ancient-text --context "貸出記録を読み解く" >/tmp/trpg-contest.json
 trpg prompt gm --brief >/tmp/trpg-prompt-gm-brief.json
 trpg prompt player alice --brief >/tmp/trpg-prompt-player-brief.json
@@ -46,6 +47,11 @@ trpg session end >/tmp/trpg-session-end.json
 
 if trpg status alice add 失敗例 --tags ritual seal >/tmp/trpg-bad-tags.json 2>/tmp/trpg-bad-tags.err; then
   echo "smoke: expected --tags ritual seal to fail" >&2
+  exit 1
+fi
+
+if trpg status alice add 失敗例 --modifier tech:+1 >/tmp/trpg-bad-status.json 2>/tmp/trpg-bad-status.err; then
+  echo "smoke: expected positional status add name to fail" >&2
   exit 1
 fi
 

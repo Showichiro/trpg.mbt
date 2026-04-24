@@ -35,7 +35,7 @@ trpg pc show alice --for-roll tech --tags forced-entry
 trpg scene show
 trpg roll alice --stat tech --scene-default --tags forced-entry --context "重い扉の解錠"
 trpg roll orion --stat mind --target 9 --tags ritual,seal --context "封印の手順を譜面に落とし込む"
-trpg status alice add 祝福 --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume
+trpg status alice add --name 祝福 --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume
 trpg item give alice "銀の鍵" --desc "封印石棺の鍵"
 trpg contest alice "司書の亡霊" --a-stat tech --b-stat mind --context "鍵の所在を探る"
 trpg attack "司書の亡霊" alice --atk mind --def tech --damage 1d6 --context "怨念の奔流"
@@ -53,13 +53,15 @@ trpg session end
 
 stdout はデフォルトで JSON、stderr は人間向けの短い説明です。`--human` を付けると stdout も人間向けになります。
 
-`trpg roll <name> --stat ...` は PC/NPC の能力値、trait、inventory item、structured status を自動合算します。`base_stat` も加算対象です。`--scene-default` を付けると現在シーンの `difficulty` を target に使います。
+`trpg roll <name> --stat ...` は PC/NPC の能力値、trait、inventory item、structured status を自動合算します。`base_stat` も加算対象です。`--scene-default` を付けると現在シーンの `difficulty` を既定値として使い、`--stat` 併用時は target/tags を scene から流用したまま stat だけ差し替えます。
 
-scene default を使えない搦め手・準備・援護判定では `--target N` を明示してください。例えば「本来は body 9 のシーンで、mind を使った譜面化を並 9 で裁く」ときは `trpg roll orion --stat mind --target 9 ...` の形を使います。
+trait / item / status の auto-apply は `effect.stat == --stat` かつ tag 一致が条件です。tag が一致していても stat が違えば乗りません。そういう候補は `skipped_sources` に理由付きで出ます。
+
+scene default を使う搦め手・準備・援護判定では `trpg roll orion --scene-default --stat tech --tags ritual,seal ...` のように stat だけ差し替える形を優先してください。scene target 自体を変えたいときだけ `--target N` を明示します。
 
 `--tags` は comma-separated です。複数タグは `--tags ritual,seal` のように 1 引数で渡してください。`--tags ritual seal` は usage error になります。
 
-準備判定や援護判定の成功は、原則 `trpg status ... --uses 1 --on-trigger consume` の一時 status として次の本命ロールへつなぎます。
+準備判定や援護判定の成功は、原則 `trpg status ... add --name ... --uses 1 --on-trigger consume` の一時 status として次の本命ロールへつなぎます。本命ロールの stat に合わせた `--modifier <stat>:+N` を使ってください。
 
 `trpg prompt gm` と `trpg prompt player` は `events` を正本とした `直近履歴` を出します。scene 遷移、item 変化、HP、status、roll、contest、attack が時系列でまとまるので、手動ログが少なくても再開しやすくなります。`--brief` を付けると handoff 向けの軽量版になります。
 

@@ -40,7 +40,7 @@ fn describe_commands_json() -> Json {
         "利用可能な PC template を表示する", "trpg pc templates list",
       ),
       "roll": command_descriptor(
-        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--bonus N] [--target N|--scene-default] [--tags tag1,tag2] [--context text]  # alt-stat / 準備 / 援護は --target N を使う",
+        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--bonus N] [--target N|--scene-default] [--tags tag1,tag2] [--context text]  # alt-stat / 準備 / 援護は --scene-default --stat <other> を優先",
       ),
       "roll.history": command_descriptor(
         "判定履歴を表示する", "trpg roll history [--as name] [-n N]",
@@ -55,7 +55,7 @@ fn describe_commands_json() -> Json {
         "HP を増減する", "trpg hp <name> <delta> [--by actor] [--context text]",
       ),
       "status": command_descriptor(
-        "状態タグを追加・削除する", "trpg status <name> <add|remove> <tag> [--note text] [--modifier ability:+N] [--tags tag1,tag2] [--uses N] [--duration text] [--on-trigger consume|persist]",
+        "状態タグを追加・削除する", "trpg status <character> add --name <status_name> [--note text] [--modifier ability:+N] [--tags tag1,tag2] [--uses N] [--duration text] [--on-trigger consume|persist] | trpg status <character> remove <status_name>",
       ),
       "item.give": command_descriptor(
         "アイテムを付与する", "trpg item give <name> <item> [--desc text] [--effect ability:+N] [--tags tag1,tag2] [--note text]",

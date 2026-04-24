@@ -95,11 +95,30 @@ struct ModifierPreviewRow {
 }
 
 ///|
+struct SkippedModifierRow {
+  kind : String
+  name : String
+  reason : String
+  effect_stat : String
+  requested_stat : String
+  effect_tags : Array[String]
+  requested_tags : Array[String]
+  effect_trigger : String
+}
+
+///|
+struct ModifierResolution {
+  matched : Array[ModifierPreviewRow]
+  skipped : Array[SkippedModifierRow]
+}
+
+///|
 struct RollPreview {
   ability : String
   base_stat : Int
   auto_total : Int
   modifiers : Array[ModifierPreviewRow]
+  skipped_modifiers : Array[SkippedModifierRow]
   inventory : Array[String]
 }
 
@@ -119,6 +138,7 @@ struct ActorRollRow {
   margin : Int?
   special : String
   modifiers : Array[ModifierPreviewRow]
+  skipped_modifiers : Array[SkippedModifierRow]
   consumed_statuses : Array[String]
   scene_warning : String?
 }

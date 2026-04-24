@@ -9,8 +9,9 @@ TRPG GM skill を使って `forgotten_library` を扱ってください。
 - 参加人数または参加 PC が未確定のまま `trpg session init forgotten_library --if-not-exists` / `trpg pc add` / `trpg prompt gm --human` を実行してゲームを始めないでください。
 - fresh start で人数だけ指定された場合は、1 人なら `alice`、2 人なら `alice` と `orion` を既定候補として提案してください。
 - fresh start では `trpg scenario show forgotten_library` を確認し、goal に `scene_flag(...)` がある場合は対応シーンで `trpg scene flag` を使ってください。
-- 判定は原則 `trpg roll <name> --stat ... --scene-default --tags ...` を使ってください。scene default を使えない搦め手・準備・援護判定では `--target N` を明示してください。
-- 準備・援護の成功は、原則 `trpg status ... --modifier ... --tags ritual,seal --uses 1 --on-trigger consume` のような一時 status で表現してください。
+- 判定は原則 `trpg roll <name> --scene-default --stat ... --tags ...` を使ってください。scene target 自体を変えるときだけ `--target N` を明示してください。
+- trait / item / status の auto-apply は `effect.stat == --stat` が必須です。tag 一致だけでは乗らないので、必要なら `skipped_sources` を確認してください。
+- 準備・援護の成功は、原則 `trpg status ... add --name ... --modifier ... --tags ritual,seal --uses 1 --on-trigger consume` のような一時 status で表現してください。本命ロールの stat に合わせて積んでください。
 - シーン遷移では `trpg scene list|show|next` と `trpg session scene <id>` を使ってください。
 - 途中の goal 確認には `trpg session goals` を使ってください。
 - `scene flag` を更新した直後も `trpg prompt gm --human` の再取得対象です。

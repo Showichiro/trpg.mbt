@@ -1081,18 +1081,59 @@ fn dispatch_status(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let name = need_pos(positions, 1, "character name")
   let op = need_pos(positions, 2, "status operation")
-  let tag = need_pos(positions, 3, "status tag")
   let note = option_value(global.args, "--note").unwrap_or("")
   let tags = parse_tags_csv(option_value(global.args, "--tags"))
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
   let row = require_character(db, session.id, name)
+  let status_name = match op {
+    "add" =>
+      if positions.length() > 3 {
+        fail(
+          TrpgError::Usage(
+            "status add no longer accepts positional status names",
+            Some("use `trpg status <character> add --name \"援護名\" ...`"),
+          ),
+        )
+      } else {
+        match option_value(global.args, "--name") {
+          Some(value) if !value.is_empty() => value
+          _ =>
+            fail(
+              TrpgError::Usage(
+                "missing --name for status add",
+                Some(
+                  "use `trpg status <character> add --name \"援護名\" --modifier tech:+1 ...`",
+                ),
+              ),
+            )
+        }
+      }
+    "remove" => {
+      if positions.length() > 4 {
+        fail(
+          TrpgError::Usage(
+            "too many positional arguments for status remove",
+            Some("use `trpg status <character> remove <status name>`"),
+          ),
+        )
+      }
+      need_pos(positions, 3, "status name")
+    }
+    _ =>
+      fail(
+        TrpgError::Usage(
+          "unknown status operation: \{op}",
+          Some("supported operations: add, remove"),
+        ),
+      )
+  }
   let conditions_json = match op {
     "add" =>
       add_condition(
         row.conditions_json,
-        tag,
+        status_name,
         note,
         option_value(global.args, "--modifier"),
         match option_value(global.args, "--uses") {
@@ -1103,24 +1144,19 @@ fn dispatch_status(global : GlobalArgs) -> RunResult raise TrpgFailure {
         option_value(global.args, "--on-trigger"),
         tags,
       )
-    "remove" => remove_condition(row.conditions_json, tag)
-    _ =>
-      fail(
-        TrpgError::Usage(
-          "unknown status operation: \{op}",
-          Some("supported operations: add, remove"),
-        ),
-      )
+    "remove" => remove_condition(row.conditions_json, status_name)
+    _ => row.conditions_json
   }
   update_character_conditions(db, row.id, conditions_json)
   let json = Json::object({
     "command": "status",
     "name": Json::string(name),
     "operation": Json::string(op),
-    "tag": Json::string(tag),
+    "status_name": Json::string(status_name),
+    "tag": Json::string(status_name),
     "conditions": parse_json(conditions_json, "conditions_json"),
   })
-  let event_text = "\{name}: status \{op} \{tag}"
+  let event_text = "\{name}: status \{op} \{status_name}"
   ignore(
     append_event(
       db,
@@ -1131,19 +1167,20 @@ fn dispatch_status(global : GlobalArgs) -> RunResult raise TrpgFailure {
       event_text,
       Json::object({
         "operation": Json::string(op),
-        "tag": Json::string(tag),
+        "status_name": Json::string(status_name),
+        "tag": Json::string(status_name),
         "tags": Json::array(tags.map(value => Json::string(value))),
         "conditions": parse_json(conditions_json, "conditions_json"),
       }).stringify(),
     ),
   )
-  json_success(json, "\{name}: status \{op} \{tag}", global)
+  json_success(json, "\{name}: status \{op} \{status_name}", global)
 }
 
 ///|
 fn add_condition(
   source : String,
-  tag : String,
+  status_name : String,
   note : String,
   modifier : String?,
   uses : Int?,
@@ -1156,7 +1193,7 @@ fn add_condition(
     _ => []
   }
   let condition : Map[String, Json] = {
-    "name": Json::string(tag),
+    "name": Json::string(status_name),
     "note": Json::string(note),
     "applied_at_ms": j_i64(now_ms()),
   }

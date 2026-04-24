@@ -1,9 +1,10 @@
 ///|
 test "positional args skip option values" {
   let args = [
-    "roll", "2d6+3", "--target", "10", "--as", "alice", "--if-not-exists",
+    "status", "alice", "add", "--name", "斜光援護", "--modifier", "tech:+1",
+    "--target", "10", "--as", "alice", "--if-not-exists",
   ]
-  inspect(positional_args(args), content="[\"roll\", \"2d6+3\"]")
+  inspect(positional_args(args), content="[\"status\", \"alice\", \"add\"]")
 }
 
 ///|

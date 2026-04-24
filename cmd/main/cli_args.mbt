@@ -54,6 +54,7 @@ fn option_takes_value(arg : String) -> Bool {
   arg == "--effect" ||
   arg == "--context" ||
   arg == "--by" ||
+  arg == "--name" ||
   arg == "--note" ||
   arg == "--outcome" ||
   arg == "--for-roll" ||

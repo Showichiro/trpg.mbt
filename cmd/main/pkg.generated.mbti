@@ -31,6 +31,8 @@ type LogRow
 
 type ModifierPreviewRow
 
+type ModifierResolution
+
 type RollEval
 
 type RollPreview
@@ -40,6 +42,8 @@ type RollRow
 type RunResult
 
 type SessionRow
+
+type SkippedModifierRow
 
 type TrpgError derive(@debug.Debug)
 

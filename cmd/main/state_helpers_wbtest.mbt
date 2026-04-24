@@ -28,15 +28,16 @@ test "roll preview sums only matching structured modifiers" {
     id: 1,
     name: "alice",
     kind: "pc",
-    sheet_json: "{\"name\":\"alice\",\"inventory\":[\"短剣\"],\"traits\":[{\"name\":\"錠開け\",\"desc\":\"解錠で +1\",\"effects\":[{\"stat\":\"tech\",\"amount\":1,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}]}],\"stats\":{\"body\":1,\"tech\":2,\"mind\":0}}",
+    sheet_json: "{\"name\":\"alice\",\"inventory\":[\"短剣\"],\"traits\":[{\"name\":\"錠開け\",\"desc\":\"解錠で +1\",\"effects\":[{\"stat\":\"tech\",\"amount\":1,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}]},{\"name\":\"古文書読解\",\"desc\":\"儀式文脈で +1\",\"effects\":[{\"stat\":\"mind\",\"amount\":1,\"tags\":[\"ritual\",\"seal\"],\"trigger\":\"roll\"}]}],\"stats\":{\"body\":1,\"tech\":2,\"mind\":0}}",
     hp_cur: 8,
     hp_max: 8,
-    conditions_json: "[{\"name\":\"祝福\",\"note\":\"次の解錠判定 +2\",\"effects\":[{\"stat\":\"tech\",\"amount\":2,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}],\"uses\":1,\"on_trigger\":\"consume\"},{\"name\":\"疲労\",\"note\":\"体判定 -1\",\"modifier\":\"body:-1\"}]",
+    conditions_json: "[{\"name\":\"祝福\",\"note\":\"次の解錠判定 +2\",\"effects\":[{\"stat\":\"tech\",\"amount\":2,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}],\"uses\":1,\"on_trigger\":\"consume\"},{\"name\":\"疲労\",\"note\":\"体判定 -1\",\"modifier\":\"body:-1\"},{\"name\":\"封印補助\",\"note\":\"封印判定 +1\",\"effects\":[{\"stat\":\"tech\",\"amount\":1,\"tags\":[\"seal\"],\"trigger\":\"roll\"}],\"uses\":1}]",
   }
   let preview = roll_preview(row, "tech", ["lockpick"])
   inspect(preview.base_stat, content="2")
   inspect(preview.auto_total, content="3")
   inspect(preview.modifiers.length(), content="2")
+  inspect(preview.skipped_modifiers.length(), content="3")
   inspect(
     format_modifier_preview(preview.modifiers[0]),
     content="[trait] 錠開け +1 / tags=lockpick / note=解錠で +1",
@@ -45,10 +46,18 @@ test "roll preview sums only matching structured modifiers" {
     format_modifier_preview(preview.modifiers[1]),
     content="[status] 祝福 +2 / tags=lockpick / uses=1 / on_trigger=consume / note=次の解錠判定 +2",
   )
+  inspect(
+    format_skipped_modifier(preview.skipped_modifiers[0]),
+    content="[trait] 古文書読解 / stat_mismatch mind vs tech",
+  )
+  inspect(
+    format_skipped_modifier(preview.skipped_modifiers[2]),
+    content="[status] 封印補助 / tag_mismatch effect_tags=seal requested_tags=lockpick",
+  )
   inspect(preview.inventory, content="[\"短剣\"]")
   inspect(
     format_roll_preview("alice", preview),
-    content="alice tech 判定プレビュー\n能力値: 2\n自動修正合計: +3\n合計(能力値+自動修正): 5\n自動修正:\n- [trait] 錠開け +1 / tags=lockpick / note=解錠で +1\n- [status] 祝福 +2 / tags=lockpick / uses=1 / on_trigger=consume / note=次の解錠判定 +2\n所持品: 短剣",
+    content="alice tech 判定プレビュー\n能力値: 2\n自動修正合計: +3\n合計(能力値+自動修正): 5\n自動修正:\n- [trait] 錠開け +1 / tags=lockpick / note=解錠で +1\n- [status] 祝福 +2 / tags=lockpick / uses=1 / on_trigger=consume / note=次の解錠判定 +2\nskipped_sources:\n- [trait] 古文書読解 / stat_mismatch mind vs tech\n- [status] 疲労 / stat_mismatch body vs tech\n- [status] 封印補助 / tag_mismatch effect_tags=seal requested_tags=lockpick\n所持品: 短剣",
   )
 }
 
@@ -70,4 +79,5 @@ test "actor roll includes base stat in total modifier" {
   inspect(rolled.total_modifier, content="6")
   inspect(rolled.expr, content="2d6+6")
   inspect(rolled.margin != None, content="true")
+  inspect(rolled.skipped_modifiers.length(), content="0")
 }

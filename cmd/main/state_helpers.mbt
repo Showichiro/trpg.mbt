@@ -172,36 +172,61 @@ fn effect_tags(effect : Json) -> Array[String] {
 }
 
 ///|
-fn effect_matches(
+fn effect_trigger(effect : Json) -> String {
+  json_string_field(effect, "trigger", "roll")
+}
+
+///|
+fn effect_stat_name(
+  effect : Json,
+  ability : String,
+) -> String raise TrpgFailure {
+  normalize_ability(json_string_field(effect, "stat", ability))
+}
+
+///|
+fn tags_match(
+  effect_tags : Array[String],
+  requested_tags : Array[String],
+) -> Bool {
+  if effect_tags.length() == 0 || string_array_contains(effect_tags, "all") {
+    true
+  } else if requested_tags.length() == 0 {
+    false
+  } else {
+    let mut matched = false
+    for tag in requested_tags {
+      if string_array_contains(effect_tags, tag) {
+        matched = true
+      }
+    }
+    matched
+  }
+}
+
+///|
+fn effect_skip_reason(
   effect : Json,
   ability : String,
   requested_tags : Array[String],
-) -> Bool raise TrpgFailure {
-  let effect_stat = normalize_ability(
-    json_string_field(effect, "stat", ability),
-  )
-  if effect_stat != ability {
-    false
+) -> String? raise TrpgFailure {
+  let trigger = effect_trigger(effect)
+  if trigger != "roll" {
+    Some("trigger_mismatch")
   } else {
-    let tags = effect_tags(effect)
-    if tags.length() == 0 || string_array_contains(tags, "all") {
-      true
-    } else if requested_tags.length() == 0 {
-      false
+    let effect_stat = effect_stat_name(effect, ability)
+    if effect_stat != ability {
+      Some("stat_mismatch")
+    } else if !tags_match(effect_tags(effect), requested_tags) {
+      Some("tag_mismatch")
     } else {
-      let mut matched = false
-      for tag in requested_tags {
-        if string_array_contains(tags, tag) {
-          matched = true
-        }
-      }
-      matched
+      None
     }
   }
 }
 
 ///|
-fn effect_preview_row(
+fn modifier_preview_row(
   kind : String,
   name : String,
   effect : Json,
@@ -209,22 +234,37 @@ fn effect_preview_row(
   uses : Int?,
   duration : String?,
   on_trigger : String?,
+) -> ModifierPreviewRow {
+  {
+    kind,
+    name,
+    amount: json_int_field(effect, "amount", 0),
+    tags: effect_tags(effect),
+    uses,
+    duration,
+    on_trigger,
+    note,
+  }
+}
+
+///|
+fn skipped_modifier_row(
+  kind : String,
+  name : String,
+  effect : Json,
+  reason : String,
   ability : String,
-  tags : Array[String],
-) -> ModifierPreviewRow? raise TrpgFailure {
-  if effect_matches(effect, ability, tags) {
-    Some({
-      kind,
-      name,
-      amount: json_int_field(effect, "amount", 0),
-      tags: effect_tags(effect),
-      uses,
-      duration,
-      on_trigger,
-      note,
-    })
-  } else {
-    None
+  requested_tags : Array[String],
+) -> SkippedModifierRow raise TrpgFailure {
+  {
+    kind,
+    name,
+    reason,
+    effect_stat: effect_stat_name(effect, ability),
+    requested_stat: ability,
+    effect_tags: effect_tags(effect),
+    requested_tags,
+    effect_trigger: effect_trigger(effect),
   }
 }
 
@@ -233,30 +273,26 @@ fn trait_modifiers(
   source : String,
   ability : String,
   tags : Array[String],
-) -> Array[ModifierPreviewRow] raise TrpgFailure {
-  let rows : Array[ModifierPreviewRow] = []
+) -> ModifierResolution raise TrpgFailure {
+  let matched : Array[ModifierPreviewRow] = []
+  let skipped : Array[SkippedModifierRow] = []
   for trait_row in trait_objects_from_sheet_json(source) {
     let name = object_name(trait_row, "trait")
     let note = json_string_field(trait_row, "desc", "")
     for effect in json_array_field(trait_row, "effects") {
-      match
-        effect_preview_row(
-          "trait",
-          name,
-          effect,
-          note,
-          None,
-          None,
-          None,
-          ability,
-          tags,
-        ) {
-        Some(row) => rows.push(row)
-        None => ()
+      match effect_skip_reason(effect, ability, tags) {
+        Some(reason) =>
+          skipped.push(
+            skipped_modifier_row("trait", name, effect, reason, ability, tags),
+          )
+        None =>
+          matched.push(
+            modifier_preview_row("trait", name, effect, note, None, None, None),
+          )
       }
     }
   }
-  rows
+  { matched, skipped }
 }
 
 ///|
@@ -264,30 +300,26 @@ fn item_modifiers(
   source : String,
   ability : String,
   tags : Array[String],
-) -> Array[ModifierPreviewRow] raise TrpgFailure {
-  let rows : Array[ModifierPreviewRow] = []
+) -> ModifierResolution raise TrpgFailure {
+  let matched : Array[ModifierPreviewRow] = []
+  let skipped : Array[SkippedModifierRow] = []
   for item in item_objects_from_sheet_json(source) {
     let name = object_name(item, "item")
     let note = json_string_field(item, "desc", "")
     for effect in json_array_field(item, "effects") {
-      match
-        effect_preview_row(
-          "item",
-          name,
-          effect,
-          note,
-          None,
-          None,
-          None,
-          ability,
-          tags,
-        ) {
-        Some(row) => rows.push(row)
-        None => ()
+      match effect_skip_reason(effect, ability, tags) {
+        Some(reason) =>
+          skipped.push(
+            skipped_modifier_row("item", name, effect, reason, ability, tags),
+          )
+        None =>
+          matched.push(
+            modifier_preview_row("item", name, effect, note, None, None, None),
+          )
       }
     }
   }
-  rows
+  { matched, skipped }
 }
 
 ///|
@@ -313,8 +345,9 @@ fn status_modifiers(
   source : String,
   ability : String,
   tags : Array[String],
-) -> Array[ModifierPreviewRow] raise TrpgFailure {
-  let rows : Array[ModifierPreviewRow] = []
+) -> ModifierResolution raise TrpgFailure {
+  let matched : Array[ModifierPreviewRow] = []
+  let skipped : Array[SkippedModifierRow] = []
   let conditions = match parse_json(source, "conditions_json") {
     Array(items) => items
     _ => []
@@ -334,19 +367,21 @@ fn status_modifiers(
       }
     }
     for effect in effects {
-      let trigger = json_string_field(effect, "trigger", "roll")
-      if trigger == "roll" {
-        match
-          effect_preview_row(
-            "status", name, effect, note, uses, duration, on_trigger, ability, tags,
-          ) {
-          Some(row) => rows.push(row)
-          None => ()
-        }
+      match effect_skip_reason(effect, ability, tags) {
+        Some(reason) =>
+          skipped.push(
+            skipped_modifier_row("status", name, effect, reason, ability, tags),
+          )
+        None =>
+          matched.push(
+            modifier_preview_row(
+              "status", name, effect, note, uses, duration, on_trigger,
+            ),
+          )
       }
     }
   }
-  rows
+  { matched, skipped }
 }
 
 ///|
@@ -354,18 +389,31 @@ fn matching_modifiers(
   row : CharacterRow,
   ability : String,
   tags : Array[String],
-) -> Array[ModifierPreviewRow] raise TrpgFailure {
-  let all : Array[ModifierPreviewRow] = []
-  for item in trait_modifiers(row.sheet_json, ability, tags) {
-    all.push(item)
+) -> ModifierResolution raise TrpgFailure {
+  let matched : Array[ModifierPreviewRow] = []
+  let skipped : Array[SkippedModifierRow] = []
+  let trait_rows = trait_modifiers(row.sheet_json, ability, tags)
+  for item in trait_rows.matched {
+    matched.push(item)
   }
-  for item in item_modifiers(row.sheet_json, ability, tags) {
-    all.push(item)
+  for item in trait_rows.skipped {
+    skipped.push(item)
   }
-  for item in status_modifiers(row.conditions_json, ability, tags) {
-    all.push(item)
+  let item_rows = item_modifiers(row.sheet_json, ability, tags)
+  for item in item_rows.matched {
+    matched.push(item)
   }
-  all
+  for item in item_rows.skipped {
+    skipped.push(item)
+  }
+  let status_rows = status_modifiers(row.conditions_json, ability, tags)
+  for item in status_rows.matched {
+    matched.push(item)
+  }
+  for item in status_rows.skipped {
+    skipped.push(item)
+  }
+  { matched, skipped }
 }
 
 ///|
@@ -531,16 +579,17 @@ fn roll_preview(
   tags : Array[String],
 ) -> RollPreview raise TrpgFailure {
   let normalized = normalize_ability(ability)
-  let modifiers = matching_modifiers(row, normalized, tags)
+  let resolution = matching_modifiers(row, normalized, tags)
   let mut auto_total = 0
-  for modifier in modifiers {
+  for modifier in resolution.matched {
     auto_total += modifier.amount
   }
   {
     ability: normalized,
     base_stat: stat_from_sheet_json(row.sheet_json, normalized),
     auto_total,
-    modifiers,
+    modifiers: resolution.matched,
+    skipped_modifiers: resolution.skipped,
     inventory: inventory_from_sheet_json(row.sheet_json),
   }
 }
@@ -589,6 +638,7 @@ fn actor_roll(
     margin,
     special,
     modifiers: preview.modifiers,
+    skipped_modifiers: preview.skipped_modifiers,
     consumed_statuses,
     scene_warning,
   }
@@ -619,6 +669,24 @@ fn modifier_preview_json(row : ModifierPreviewRow) -> Json {
 }
 
 ///|
+fn skipped_modifier_json(row : SkippedModifierRow) -> Json {
+  Json::object({
+    "kind": Json::string(row.kind),
+    "name": Json::string(row.name),
+    "reason": Json::string(row.reason),
+    "effect_stat": Json::string(row.effect_stat),
+    "requested_stat": Json::string(row.requested_stat),
+    "effect_tags": Json::array(
+      row.effect_tags.map(value => Json::string(value)),
+    ),
+    "requested_tags": Json::array(
+      row.requested_tags.map(value => Json::string(value)),
+    ),
+    "effect_trigger": Json::string(row.effect_trigger),
+  })
+}
+
+///|
 fn roll_preview_json(preview : RollPreview) -> Json {
   Json::object({
     "ability": Json::string(preview.ability),
@@ -626,6 +694,9 @@ fn roll_preview_json(preview : RollPreview) -> Json {
     "auto_modifier_total": j_int(preview.auto_total),
     "total_with_auto": j_int(preview.base_stat + preview.auto_total),
     "auto_modifiers": Json::array(preview.modifiers.map(modifier_preview_json)),
+    "skipped_sources": Json::array(
+      preview.skipped_modifiers.map(skipped_modifier_json),
+    ),
     "inventory": Json::array(
       preview.inventory.map(value => Json::string(value)),
     ),
@@ -648,6 +719,9 @@ fn actor_roll_json(row : ActorRollRow) -> Json {
     "outcome": Json::string(row.outcome),
     "special": Json::string(row.special),
     "sources": Json::array(row.modifiers.map(modifier_preview_json)),
+    "skipped_sources": Json::array(
+      row.skipped_modifiers.map(skipped_modifier_json),
+    ),
     "consumed_statuses": Json::array(
       row.consumed_statuses.map(value => Json::string(value)),
     ),
@@ -702,6 +776,29 @@ fn format_modifier_preview(row : ModifierPreviewRow) -> String {
 }
 
 ///|
+fn format_skipped_modifier(row : SkippedModifierRow) -> String {
+  let effect_tags_text = if row.effect_tags.length() == 0 {
+    "(none)"
+  } else {
+    row.effect_tags.join(",")
+  }
+  let requested_tags_text = if row.requested_tags.length() == 0 {
+    "(none)"
+  } else {
+    row.requested_tags.join(",")
+  }
+  let reason_text = match row.reason {
+    "stat_mismatch" =>
+      "stat_mismatch \{row.effect_stat} vs \{row.requested_stat}"
+    "tag_mismatch" =>
+      "tag_mismatch effect_tags=\{effect_tags_text} requested_tags=\{requested_tags_text}"
+    "trigger_mismatch" => "trigger_mismatch trigger=\{row.effect_trigger}"
+    _ => row.reason
+  }
+  "[\{row.kind}] \{row.name} / \{reason_text}"
+}
+
+///|
 fn format_roll_preview(name : String, preview : RollPreview) -> String {
   let auto_total_text = if preview.auto_total >= 0 {
     "+" + preview.auto_total.to_string()
@@ -718,12 +815,19 @@ fn format_roll_preview(name : String, preview : RollPreview) -> String {
   } else {
     preview.inventory.join(", ")
   }
+  let skipped = if preview.skipped_modifiers.length() == 0 {
+    "(なし)"
+  } else {
+    "- " + preview.skipped_modifiers.map(format_skipped_modifier).join("\n- ")
+  }
   "\{name} \{preview.ability} 判定プレビュー\n" +
   "能力値: \{preview.base_stat}\n" +
   "自動修正合計: \{auto_total_text}\n" +
   "合計(能力値+自動修正): \{preview.base_stat + preview.auto_total}\n" +
   "自動修正:\n" +
   modifier_lines +
+  "\nskipped_sources:\n" +
+  skipped +
   "\n所持品: " +
   inventory
 }
@@ -757,10 +861,17 @@ fn format_actor_roll(row : ActorRollRow) -> String {
   } else {
     row.consumed_statuses.join(", ")
   }
+  let skipped = if row.skipped_modifiers.length() == 0 {
+    "(なし)"
+  } else {
+    "- " + row.skipped_modifiers.map(format_skipped_modifier).join("\n- ")
+  }
   "\{row.actor} \{row.expr} = \{row.total}\{target_text} / \{row.outcome}\{margin_text}\{special_text}\n" +
   "base_stat=\{row.base_stat} auto_modifier_total=\{row.auto_modifier_total} bonus=\{row.bonus} total_modifier=\{row.total_modifier}\n" +
   "sources:\n" +
   sources +
+  "\nskipped_sources:\n" +
+  skipped +
   "\nconsumed_statuses: " +
   consumed +
   warning_text
