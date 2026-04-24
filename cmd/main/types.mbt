@@ -165,6 +165,9 @@ struct GrantedStatusRow {
   amount : Int
   tags : Array[String]
   source : String?
+  uses : Int
+  duration : String?
+  on_trigger : String
 }
 
 ///|

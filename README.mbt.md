@@ -34,7 +34,7 @@ trpg pc add alice --template alice
 trpg pc show alice --for-roll tech --tags forced-entry
 trpg scene show
 trpg roll alice --stat tech --scene-default --tags forced-entry --context "重い扉の解錠"
-trpg roll orion --prep --scene-default --stat mind --grant-to alice --grant tech:+1@ritual,seal --context "封印の手順を譜面に落とし込む"
+trpg roll orion --prep --scene-default --stat mind --grant-to alice --grant tech:+1@ritual,seal --grant-name 譜面援護 --grant-uses 2 --grant-duration scene --grant-on-trigger consume --context "封印の手順を譜面に落とし込む"
 trpg status alice add --name 祝福 --source orion --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume
 trpg scene progress entrance-door +1 --note "蝶番が少し緩んだ"
 trpg scene modifier add --name "扉が緩む" --next-roll target:-2 --stat tech --tags forced-entry --note "次の解錠を少し易しくする"
@@ -57,17 +57,17 @@ trpg session end
 
 stdout はデフォルトで JSON、stderr は人間向けの短い説明です。`--human` を付けると stdout も人間向けになります。
 
-`trpg roll <name> --stat ...` は PC/NPC の能力値、trait、inventory item、structured status を自動合算します。`base_stat` も加算対象です。`--scene-default` を付けると現在シーンの `difficulty` を既定値として使い、`--stat` 併用時は target/tags を scene から流用したまま stat だけ差し替えます。`--prep` は準備・援護向けの sugar で、target 未指定時に現在 scene の target を 2 下げ、scene target が無ければ 9 を使います。
+`trpg roll <name> --stat ...` は PC/NPC の能力値、trait、inventory item、structured status を自動合算します。`base_stat` も加算対象です。`--scene-default` を付けると現在シーンの `difficulty` を既定値として使い、scene tags と `--tags` は **union** されます。override ではありません。`--stat` 併用時は target/tags を scene から流用したまま stat だけ差し替えます。`--prep` は準備・援護向けの sugar で、target 未指定時に現在 scene の target を 2 下げ、scene target が無ければ 9 を使います。
 
-trait / item / status の auto-apply は `effect.stat == --stat` かつ tag 一致が条件です。tag が一致していても stat が違えば乗りません。そういう候補は `skipped_sources` に理由付きで出ます。custom tag を足すと既存 trait/item/status の tag 一致が外れて auto-apply が減ることがあるので、scene target だけ流用したいなら tag はむやみに差し替えない方が安全です。
+trait / item / status の auto-apply は `effect.stat == --stat` かつ tag 一致が条件です。tag が一致していても stat が違えば乗りません。そういう候補は `skipped_sources` に理由付きで出ます。custom tag を足すと既存 trait/item/status の tag 一致が外れて auto-apply が減ることがあるので、まずは既存 scene tag に丸め、auto-apply を意図的に変えたいときだけ新規 tag を足す方が安全です。
 
-scene default を使う搦め手では `trpg roll orion --scene-default --stat tech --tags ritual,seal ...` のように stat だけ差し替える形を優先してください。準備・援護は `trpg roll orion --prep --scene-default --stat mind ...` を優先し、scene target 自体を変えたいときだけ `--target N` を明示します。
+scene default を使う搦め手では `trpg roll orion --scene-default --stat tech --tags ritual,seal ...` のように stat だけ差し替える形を優先してください。準備・援護は `trpg roll orion --prep --scene-default --stat mind ...` のように `--prep` と `--scene-default` を併用して構いません。このとき target は `--prep` 側が決め、scene tags は `--scene-default` 側からも流用されます。scene target 自体を変えたいときだけ `--target N` を明示します。
 
 `--tags` は comma-separated です。複数タグは `--tags ritual,seal` のように 1 引数で渡してください。`--tags ritual seal` は usage error になります。
 
-準備判定や援護判定の成功は、原則 `trpg roll ... --grant-to <target> --grant tech:+1@ritual,seal` で `uses=1 / on_trigger=consume` の一時 status を自動付与します。`--grant-to` に自分自身を指定して self-grant しても構いません。手動で積む場合は `trpg status ... add --name ... --source 援護者 --uses 1 --on-trigger consume` を使い、本命ロールの stat に合わせた `--modifier <stat>:+N` を指定してください。
+準備判定や援護判定の成功は、原則 `trpg roll ... --grant-to <target> --grant tech:+1@ritual,seal` で一時 status を自動付与します。`--grant-name`、`--grant-uses N`、`--grant-duration scene|infinite`、`--grant-on-trigger consume|persist` で挙動を明示指定できます。デフォルトは `uses=1 / on_trigger=consume / duration 指定なし` で、consume されるまで scene を跨いで残ります。`--grant-to` に自分自身を指定して self-grant しても構いません。手動で積む場合は `trpg status ... add --name ... --source 援護者 --uses 1 --on-trigger consume` を使い、本命ロールの stat に合わせた `--modifier <stat>:+N` を指定してください。
 
-`special=crit` は「難度 1 段階軽減相当」「`+2〜+3 / uses=1` の援護 status」「副次好機 1 つ」のいずれかを目安に扱うと安定します。`special=fumble` は一段重く扱います。
+`margin=0` は純粋な HIT として扱います。機械的不利は付けず、必要なら描写上の緊張感だけ残してください。`margin>=3` は `special=crit` ではありませんが、副次好機 1 つを検討してよい目安です。`special=crit` は「難度 1 段階軽減相当」「`+2〜+3 / uses=1` の援護 status」「副次好機 1 つ」のいずれかを目安に扱うと安定します。`special=fumble` は一段重く扱います。
 
 `trpg prompt gm` と `trpg prompt player` は `events` を正本とした `直近履歴` を出します。scene 遷移、item 変化、HP、status、roll、contest、attack が時系列でまとまるので、手動ログが少なくても再開しやすくなります。`--brief` を付けると handoff 向けの軽量版になります。
 
@@ -102,6 +102,13 @@ bash ~/ghq/github.com/Showichiro/trpg.mbt/scripts/smoke.sh
 
 Claude Code では `/trpg-start` を実行すると GM skill が起動します。
 
-fresh start では、GM skill は開始前に参加人数と参加 PC を確認します。`forgotten_library` の既定候補は `party_setup.default_participants` を正とし、1 人なら `alice`、2 人なら `alice` と `orion` です。
+fresh start では、GM skill は開始前に参加人数と参加 PC を確認します。`forgotten_library` の既定候補は `party_setup.default_participants` を正とし、1 人なら `alice`、2 人なら `alice` と `orion` です。scenario 定義の NPC は `session init` 時に自動登録されるので、GM が追加 NPC を足したいときだけ手動登録します。
 
-player subagent への handoff には `trpg prompt player <name> --human --brief` を使います。ここには現在シーン、パーティ状態、直近履歴、active status が含まれます。シーン遷移直後、援護ターン、分岐判断では GM が選択肢を補足して構いません。
+player subagent への handoff には `trpg prompt player <name> --human --brief` を使います。ここには現在シーン、パーティ状態、直近履歴、active status が含まれます。運用モード指定があればそれに従ってください。シーン遷移直後、援護ターン、分岐判断では末尾に次のような `## GM補足` セクションを足すと安定します。
+
+```text
+## GM補足
+- 候補A: ...
+- 候補B: ...
+- 候補C: ...
+```

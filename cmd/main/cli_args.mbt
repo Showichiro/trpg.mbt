@@ -74,6 +74,9 @@ fn option_takes_value(arg : String) -> Bool {
   arg == "--grant-to" ||
   arg == "--grant" ||
   arg == "--grant-name" ||
+  arg == "--grant-uses" ||
+  arg == "--grant-duration" ||
+  arg == "--grant-on-trigger" ||
   arg == "--next-roll" ||
   arg == "--atk" ||
   arg == "--def" ||

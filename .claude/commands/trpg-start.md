@@ -9,10 +9,10 @@ TRPG GM skill を使って `forgotten_library` を扱ってください。
 - 参加人数または参加 PC が未確定のまま `trpg session init forgotten_library --if-not-exists` / `trpg pc add` / `trpg prompt gm --human` を実行してゲームを始めないでください。
 - fresh start で人数だけ指定された場合は、1 人なら `alice`、2 人なら `alice` と `orion` を既定候補として提案してください。
 - fresh start では `trpg scenario show forgotten_library` を確認し、goal に `scene_flag(...)` がある場合は対応シーンで `trpg scene flag` を使ってください。
-- 判定は原則 `trpg roll <name> --scene-default --stat ... --tags ...` を使ってください。準備・援護は `trpg roll <name> --prep ...` を優先してください。`--prep` は target 未指定時に現在 scene の target を 2 下げ、scene target が無いときは 9 を使います。scene target 自体を変えるときだけ `--target N` を明示してください。
+- 判定は原則 `trpg roll <name> --scene-default --stat ... --tags ...` を使ってください。`--scene-default` と `--tags` は union され、override ではありません。準備・援護は `trpg roll <name> --prep ...` を優先してください。`--prep` は target 未指定時に現在 scene の target を 2 下げ、scene target が無いときは 9 を使います。`--prep --scene-default` は併用可で、target は prep、scene tags は scene-default 由来も使います。scene target 自体を変えるときだけ `--target N` を明示してください。
 - trait / item / status の auto-apply は `effect.stat == --stat` が必須です。tag 一致だけでは乗らないので、必要なら `skipped_sources` を確認してください。
-- custom tag を足すと既存 trait/item/status の tag 一致が外れて auto-apply が減ることがあります。scene target だけ流用したい場面では tag をむやみに差し替えないでください。
-- 準備・援護の成功は、原則 `trpg roll ... --grant-to <target> --grant tech:+1@ritual,seal` のように一時 status を自動付与してください。self-grant しても構いません。手動で積むなら `trpg status ... add --name ... --source 援護者 --modifier ... --tags ritual,seal --uses 1 --on-trigger consume` を使い、本命ロールの stat に合わせてください。
+- custom tag を足すと既存 trait/item/status の tag 一致が外れて auto-apply が減ることがあります。まず既存 scene tag に丸め、auto-apply を意図的に変えたいときだけ新規 tag を足してください。
+- 準備・援護の成功は、原則 `trpg roll ... --grant-to <target> --grant tech:+1@ritual,seal` のように一時 status を自動付与してください。`--grant-name`、`--grant-uses`、`--grant-duration`、`--grant-on-trigger` は既存機能です。デフォルトは `uses=1 / on_trigger=consume / duration 指定なし` で、consume されるまで scene を跨いで残ります。self-grant しても構いません。手動で積むなら `trpg status ... add --name ... --source 援護者 --modifier ... --tags ritual,seal --uses 1 --on-trigger consume` を使い、本命ロールの stat に合わせてください。
 - シーン遷移では `trpg scene list|show|next` と `trpg session scene <id>` を使ってください。
 - 途中の goal 確認には `trpg session goals` を使ってください。
 - `scene flag` を更新した直後も `trpg prompt gm --human` の再取得対象です。
@@ -21,6 +21,9 @@ TRPG GM skill を使って `forgotten_library` を扱ってください。
 - `duration=scene` の status は scene 遷移時に自動で消えます。
 - アイテムの受け渡しは `trpg item transfer <from> <to> <item>` を使ってください。
 - `special=crit` は難度 1 段階軽減相当、または `+2〜+3 / uses=1` の援護 status、または副次好機 1 つを目安に扱ってください。
+- `margin=0` は純粋な HIT です。機械的不利は付けず、必要なら描写上の緊張感だけ残してください。
+- `margin>=3` は `special=crit` ではありませんが、副次好機 1 つを検討して構いません。
 - 終幕では `trpg session report` を確認し、必要なら `trpg session end` を実行してください。
-- player handoff では `trpg prompt player <name> --human --brief` を主情報源にしてください。必要なら GM が見えている状況や選択肢を補足して構いません。
-- ユーザが即開始を明示した場合は、`party_setup.default_participants` を使ってそのまま開始して構いません。ただし `scene_flag(...)` や goal 条件を直接動かす高リスク判定は一度確認してください。
+- player handoff では `trpg prompt player <name> --human --brief` を主情報源にしてください。必要なら末尾に `## GM補足` セクションを足し、箇条書きで選択肢候補を書いて構いません。
+- scenario 定義の NPC は `session init` で自動登録されます。追加 NPC が必要なときだけ手動で登録してください。
+- ユーザが即開始を明示した場合は、`party_setup.default_participants` を使ってそのまま開始して構いません。運用モード指定があればそれにも従ってください。失敗時に即 bad end / irreversible loss / goal lockout を起こしうる判定だけは一度確認してください。

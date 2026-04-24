@@ -868,6 +868,20 @@ fn default_grant_name(actor : String) -> String {
 }
 
 ///|
+fn normalize_grant_on_trigger(value : String) -> String raise TrpgFailure {
+  match value {
+    "consume" | "persist" => value
+    _ =>
+      fail(
+        TrpgError::Usage(
+          "unknown --grant-on-trigger value: \{value}",
+          Some("supported values: consume, persist"),
+        ),
+      )
+  }
+}
+
+///|
 fn grant_status_json(row : GrantedStatusRow) -> Json {
   let object : Map[String, Json] = {
     "target": Json::string(row.target),
@@ -875,10 +889,16 @@ fn grant_status_json(row : GrantedStatusRow) -> Json {
     "ability": Json::string(row.ability),
     "amount": j_int(row.amount),
     "tags": Json::array(row.tags.map(value => Json::string(value))),
+    "uses": j_int(row.uses),
+    "on_trigger": Json::string(row.on_trigger),
   }
   match row.source {
     Some(value) => object["source"] = Json::string(value)
     None => ()
+  }
+  match row.duration {
+    Some(value) => object["duration"] = Json::string(value)
+    None => object["duration"] = Json::null()
   }
   Json::object(object)
 }
@@ -899,7 +919,11 @@ fn format_granted_status(row : GrantedStatusRow) -> String {
     Some(value) if !value.is_empty() => " / source=\{value}"
     _ => ""
   }
-  "\{row.target} <= \{row.name} (\{row.ability} \{amount_text} / tags=\{tags_text}\{source_text})"
+  let duration_text = match row.duration {
+    Some(value) if !value.is_empty() => " / duration=\{value}"
+    _ => ""
+  }
+  "\{row.target} <= \{row.name} (\{row.ability} \{amount_text} / tags=\{tags_text} / uses=\{row.uses} / on_trigger=\{row.on_trigger}\{duration_text}\{source_text})"
 }
 
 ///|
@@ -912,14 +936,34 @@ fn resolve_grant_status(
   let target_name = option_value(args, "--grant-to")
   let spec = option_value(args, "--grant")
   let explicit_name = option_value(args, "--grant-name")
+  let grant_uses = match option_value(args, "--grant-uses") {
+    Some(value) => parse_int_arg(value, "grant-uses")
+    None => 1
+  }
+  if grant_uses <= 0 {
+    fail(
+      TrpgError::Usage(
+        "grant-uses must be positive",
+        Some("use `--grant-uses 1` or larger"),
+      ),
+    )
+  }
+  let grant_duration = option_value(args, "--grant-duration")
+  let grant_on_trigger = match option_value(args, "--grant-on-trigger") {
+    Some(value) => normalize_grant_on_trigger(value)
+    None => "consume"
+  }
   match (target_name, spec) {
     (None, None) =>
-      if explicit_name != None {
+      if explicit_name != None ||
+        option_value(args, "--grant-uses") != None ||
+        option_value(args, "--grant-duration") != None ||
+        option_value(args, "--grant-on-trigger") != None {
         fail(
           TrpgError::Usage(
-            "--grant-name requires --grant and --grant-to",
+            "grant options require both --grant and --grant-to",
             Some(
-              "use `trpg roll orion --prep --grant-to alice --grant tech:+1@ritual,seal`",
+              "use `trpg roll orion --prep --grant-to alice --grant tech:+1@ritual,seal --grant-name 譜面援護 --grant-uses 1 --grant-on-trigger consume`",
             ),
           ),
         )
@@ -947,6 +991,9 @@ fn resolve_grant_status(
         amount,
         tags: grant_tags,
         source: Some(actor),
+        uses: grant_uses,
+        duration: grant_duration,
+        on_trigger: grant_on_trigger,
       }
       Some((target_row, granted))
     }
@@ -966,9 +1013,9 @@ fn apply_granted_status(
     granted.name,
     "",
     Some(modifier),
-    Some(1),
-    None,
-    Some("consume"),
+    Some(granted.uses),
+    granted.duration,
+    Some(granted.on_trigger),
     granted.tags,
     granted.source,
   )
@@ -995,8 +1042,12 @@ fn apply_granted_status(
       "effects": Json::array([
         effect_json(granted.ability, granted.amount, granted.tags, "roll"),
       ]),
-      "uses": j_int(1),
-      "on_trigger": Json::string("consume"),
+      "uses": j_int(granted.uses),
+      "duration": match granted.duration {
+        Some(value) => Json::string(value)
+        None => Json::null()
+      },
+      "on_trigger": Json::string(granted.on_trigger),
       "target": Json::string(granted.target),
     }).stringify(),
   )

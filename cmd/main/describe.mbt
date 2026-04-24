@@ -40,7 +40,7 @@ fn describe_commands_json() -> Json {
         "利用可能な PC template を表示する", "trpg pc templates list",
       ),
       "roll": command_descriptor(
-        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--bonus N] [--target N|--scene-default|--prep] [--tags tag1,tag2] [--grant-to <name> --grant <ability:+N@tag1,tag2> [--grant-name <status_name>]] [--context text]  # --prep は target 未指定時に scene target-2、無ければ 9",
+        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--bonus N] [--target N|--scene-default|--prep] [--tags tag1,tag2] [--grant-to <name> --grant <ability:+N@tag1,tag2> [--grant-name <status_name>] [--grant-uses N] [--grant-duration scene|infinite] [--grant-on-trigger consume|persist]] [--context text]  # --scene-default は scene tags と --tags を union、--prep は target 未指定時に scene target-2、無ければ 9",
       ),
       "roll.history": command_descriptor(
         "判定履歴を表示する", "trpg roll history [--as name] [-n N]",

@@ -24,7 +24,8 @@ trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show.json
 trpg roll alice --stat body --scene-default --context "入口の扉を押し開ける" >/tmp/trpg-roll-open.json
 trpg status alice add --name 祝福 --source gm --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume >/tmp/trpg-status.json
 trpg status alice add --name 動揺 --modifier body:-1 --tags forced-entry,ruins --duration scene >/tmp/trpg-status-scene.json
-trpg roll alice --prep --stat tech --tags forced-entry --bonus 12 --grant-to alice --grant tech:+1@forced-entry --grant-name 足場援護 --context "足場を整える" >/tmp/trpg-roll-prep.json
+trpg roll alice --prep --stat tech --tags forced-entry --bonus 12 --grant-to alice --grant tech:+1@forced-entry --grant-name 足場援護 --grant-uses 2 --grant-duration scene --grant-on-trigger consume --context "足場を整える" >/tmp/trpg-roll-prep.json
+trpg roll alice --prep --scene-default --stat tech --tags forced-entry --bonus 10 --grant-to alice --grant tech:+1@forced-entry --grant-name 残る援護 --grant-uses 2 --grant-duration scene --grant-on-trigger persist --context "もう一段、支点を整える" >/tmp/trpg-roll-grant-custom.json
 trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show-after-prep.json
 trpg roll alice --stat tech --tags forced-entry --target 10 --context "扉の解錠" >/tmp/trpg-roll.json
 trpg roll alice --stat mind --target 9 --tags ritual,seal --context "譜面を読み替えて補助線を探る" >/tmp/trpg-roll-alt-target.json
@@ -66,6 +67,26 @@ fi
 
 if ! grep -q '"target":7' /tmp/trpg-roll-prep.json; then
   echo "smoke: expected --prep to use target 7 at entrance" >&2
+  exit 1
+fi
+
+if ! grep -q '"uses":2' /tmp/trpg-roll-prep.json || ! grep -q '"duration":"scene"' /tmp/trpg-roll-prep.json; then
+  echo "smoke: expected grant options to be reflected in granted_status" >&2
+  exit 1
+fi
+
+if ! grep -q '"duration":"scene"' /tmp/trpg-roll-grant-custom.json; then
+  echo "smoke: expected custom grant duration to be recorded" >&2
+  exit 1
+fi
+
+if ! grep -q '"uses":2' /tmp/trpg-roll-grant-custom.json; then
+  echo "smoke: expected custom grant uses to be recorded" >&2
+  exit 1
+fi
+
+if ! grep -q '"on_trigger":"persist"' /tmp/trpg-roll-grant-custom.json; then
+  echo "smoke: expected custom grant trigger to be recorded" >&2
   exit 1
 fi
 

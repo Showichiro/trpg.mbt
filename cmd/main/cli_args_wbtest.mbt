@@ -11,7 +11,8 @@ test "positional args skip option values" {
 test "positional args skip prep and grant flags" {
   let args = [
     "roll", "orion", "--prep", "--scene-default", "--stat", "mind", "--grant-to",
-    "alice", "--grant", "tech:+1@ritual,seal", "--grant-name", "譜面援護",
+    "alice", "--grant", "tech:+1@ritual,seal", "--grant-name", "譜面援護", "--grant-uses",
+    "2", "--grant-duration", "scene", "--grant-on-trigger", "persist",
   ]
   inspect(positional_args(args), content="[\"roll\", \"orion\"]")
 }
