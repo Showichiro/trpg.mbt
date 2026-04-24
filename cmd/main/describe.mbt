@@ -28,7 +28,7 @@ fn describe_commands_json() -> Json {
         "現在シーンを変更する", "trpg session scene <key> [--note text]",
       ),
       "session.note": command_descriptor(
-        "GM メモをログに残す", "trpg session note <text>",
+        "GM メモをログに残す", "trpg session note <text> [--kind note|soften|ruling|foreshadow] [--ref-event <event_id>]",
       ),
       "pc.add": command_descriptor(
         "PC を登録する", "trpg pc add <name> (--from <path> | --template <template_id>)",
@@ -63,6 +63,9 @@ fn describe_commands_json() -> Json {
       "item.drop": command_descriptor(
         "アイテムを削除する", "trpg item drop <name> <item> [--note text]",
       ),
+      "item.transfer": command_descriptor(
+        "アイテムを別キャラクターへ移す", "trpg item transfer <from> <to> <item> [--note text]",
+      ),
       "item.list": command_descriptor(
         "インベントリを表示する", "trpg item list [<name>]",
       ),
@@ -93,6 +96,9 @@ fn describe_commands_json() -> Json {
       ),
       "scene.progress": command_descriptor(
         "現在シーンの進捗カウンタを増減する", "trpg scene progress <key> <delta> [--note text]",
+      ),
+      "scene.modifier.add": command_descriptor(
+        "現在シーンの次判定向け一時易化/難化を追加する", "trpg scene modifier add --name <name> --next-roll target:-2 [--stat body|tech|mind] [--tags tag1,tag2] [--source actor] [--note text]",
       ),
       "scenario.show": command_descriptor(
         "シナリオ定義を表示する", "trpg scenario show <scenario_id>",

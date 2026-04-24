@@ -20,6 +20,16 @@ test "inventory helpers add and drop items" {
     inventory_from_sheet_json(dropped),
     content="[\"短剣\", \"銀の鍵\"]",
   )
+  let (without_key, key_item) = take_inventory_item_json(added, "銀の鍵")
+  let transferred = add_existing_inventory_item_json(
+    "{\"name\":\"orion\",\"inventory\":[],\"traits\":[],\"stats\":{\"body\":0,\"tech\":1,\"mind\":2}}",
+    key_item,
+  )
+  inspect(
+    inventory_from_sheet_json(without_key),
+    content="[\"短剣\", \"縄\"]",
+  )
+  inspect(inventory_from_sheet_json(transferred), content="[\"銀の鍵\"]")
 }
 
 ///|
@@ -101,7 +111,7 @@ test "actor roll includes base stat in total modifier" {
     hp_max: 8,
     conditions_json: "[{\"name\":\"祝福\",\"note\":\"次の解錠判定 +2\",\"effects\":[{\"stat\":\"tech\",\"amount\":2,\"tags\":[\"lockpick\"],\"trigger\":\"roll\"}],\"uses\":1,\"on_trigger\":\"consume\"}]",
   }
-  let rolled = actor_roll(row, "tech", 1, Some(11), ["lockpick"], None)
+  let rolled = actor_roll(row, "tech", 1, Some(11), ["lockpick"], [], 0, None)
   inspect(rolled.base_stat, content="2")
   inspect(rolled.auto_modifier_total, content="3")
   inspect(rolled.bonus, content="1")
@@ -109,4 +119,58 @@ test "actor roll includes base stat in total modifier" {
   inspect(rolled.expr, content="2d6+6")
   inspect(rolled.margin != None, content="true")
   inspect(rolled.skipped_modifiers.length(), content="0")
+}
+
+///|
+test "scene modifiers apply to matching next roll and then consume" {
+  let modifiers : Array[SceneModifierRow] = [
+    {
+      name: "扉が緩む",
+      target_delta: -2,
+      stat: Some("tech"),
+      tags: ["forced-entry"],
+      note: "蝶番が軋む",
+      source: Some("gm"),
+      scope: "next_roll",
+    },
+  ]
+  let (target, delta, applied, remaining) = apply_scene_modifiers(
+    modifiers,
+    "tech",
+    ["forced-entry"],
+    Some(9),
+  )
+  inspect(target, content="Some(7)")
+  inspect(delta, content="-2")
+  inspect(applied.length(), content="1")
+  inspect(remaining.length(), content="0")
+  inspect(
+    format_scene_modifier(applied[0]),
+    content="扉が緩む / target -2 / stat=tech / tags=forced-entry / source=gm / note=蝶番が軋む",
+  )
+}
+
+///|
+test "scene modifiers stay when stat or tags do not match" {
+  let modifiers : Array[SceneModifierRow] = [
+    {
+      name: "扉が緩む",
+      target_delta: -2,
+      stat: Some("tech"),
+      tags: ["forced-entry"],
+      note: "",
+      source: None,
+      scope: "next_roll",
+    },
+  ]
+  let (target, delta, applied, remaining) = apply_scene_modifiers(
+    modifiers,
+    "mind",
+    ["forced-entry"],
+    Some(9),
+  )
+  inspect(target, content="Some(9)")
+  inspect(delta, content="0")
+  inspect(applied.length(), content="0")
+  inspect(remaining.length(), content="1")
 }

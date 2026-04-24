@@ -37,6 +37,11 @@ fn command_help_key(args : Array[String]) -> String? {
       }
     Some("scene") =>
       match args.get(1) {
+        Some("modifier") =>
+          match args.get(2) {
+            Some(verb) => Some("scene.modifier." + verb)
+            None => None
+          }
         Some(verb) => Some("scene." + verb)
         None => None
       }

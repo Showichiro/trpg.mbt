@@ -43,6 +43,8 @@ type RollRow
 
 type RunResult
 
+type SceneModifierRow
+
 type SessionRow
 
 type SkippedModifierRow

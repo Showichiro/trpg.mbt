@@ -30,7 +30,7 @@ trpg roll alice --stat tech --tags forced-entry --target 10 --context "扉の解
 trpg roll alice --stat mind --target 9 --tags ritual,seal --context "譜面を読み替えて補助線を探る" >/tmp/trpg-roll-alt-target.json
 trpg hp alice -3 --context "扉の反動" >/tmp/trpg-hp.json
 trpg item give alice "銀の鍵" --desc "封印石棺の鍵" >/tmp/trpg-item-give.json
-trpg item drop alice "銀の鍵" --note "司書へ返却した" >/tmp/trpg-item-drop.json
+trpg item transfer alice "司書の亡霊" "短剣" --note "司書へ預けた" >/tmp/trpg-item-transfer.json
 trpg log add "扉を開けた" --as alice >/tmp/trpg-log-add.json
 trpg log show --kind roll -n 5 >/tmp/trpg-log-show.json
 trpg roll history --as alice -n 5 >/tmp/trpg-roll-history.json
@@ -39,7 +39,10 @@ trpg session goals >/tmp/trpg-session-goals-before.json
 trpg prompt player alice --brief --human >/tmp/trpg-prompt-player-before-scene.txt
 trpg scene next >/tmp/trpg-scene.json
 trpg pc show alice >/tmp/trpg-pc-show-after-scene.json
+trpg scene modifier add --name "蔵書の道筋" --next-roll target:-2 --stat tech --tags ancient-text --note "近い棚が見えた" >/tmp/trpg-scene-modifier-add.json
 trpg roll alice --scene-default --stat tech --tags ancient-text --context "蔵書の間で搦め手に記録を探る" >/tmp/trpg-roll-scene-default-override.json
+roll_event_id="$(sed -n 's/.*\"event_id\":\([0-9][0-9]*\).*/\1/p' /tmp/trpg-roll-scene-default-override.json)"
+trpg session note "near miss を軽減して HP 半減" --kind soften --ref-event "$roll_event_id" >/tmp/trpg-session-note-ref.json
 trpg contest alice "司書の亡霊" --a-stat tech --b-stat mind --a-tags ancient-text --b-tags ancient-text --context "貸出記録を読み解く" >/tmp/trpg-contest.json
 trpg prompt gm --brief >/tmp/trpg-prompt-gm-brief.json
 trpg prompt player alice --brief >/tmp/trpg-prompt-player-brief.json
@@ -63,6 +66,16 @@ fi
 
 if ! grep -q '"target":7' /tmp/trpg-roll-prep.json; then
   echo "smoke: expected --prep to use target 7 at entrance" >&2
+  exit 1
+fi
+
+if ! grep -q '"scene_target_modifier":-2' /tmp/trpg-roll-scene-default-override.json; then
+  echo "smoke: expected scene modifier to ease the next matching roll" >&2
+  exit 1
+fi
+
+if ! grep -q '"kind":"soften"' /tmp/trpg-session-note-ref.json; then
+  echo "smoke: expected session note to record note kind" >&2
   exit 1
 fi
 

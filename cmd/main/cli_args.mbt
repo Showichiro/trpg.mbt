@@ -56,7 +56,9 @@ fn option_takes_value(arg : String) -> Bool {
   arg == "--by" ||
   arg == "--name" ||
   arg == "--source" ||
+  arg == "--kind" ||
   arg == "--note" ||
+  arg == "--ref-event" ||
   arg == "--outcome" ||
   arg == "--for-roll" ||
   arg == "--modifier" ||
@@ -72,6 +74,7 @@ fn option_takes_value(arg : String) -> Bool {
   arg == "--grant-to" ||
   arg == "--grant" ||
   arg == "--grant-name" ||
+  arg == "--next-roll" ||
   arg == "--atk" ||
   arg == "--def" ||
   arg == "--damage" ||

@@ -17,6 +17,25 @@ test "positional args skip prep and grant flags" {
 }
 
 ///|
+test "positional args skip scene modifier and session note option values" {
+  let modifier_args = [
+    "scene", "modifier", "add", "--name", "扉が緩む", "--next-roll", "target:-2",
+    "--stat", "tech", "--tags", "forced-entry", "--source", "gm", "--note", "蝶番が緩んだ",
+  ]
+  inspect(
+    positional_args(modifier_args),
+    content="[\"scene\", \"modifier\", \"add\"]",
+  )
+  let note_args = [
+    "session", "note", "HP 半減適用", "--kind", "soften", "--ref-event", "37",
+  ]
+  inspect(
+    positional_args(note_args),
+    content="[\"session\", \"note\", \"HP 半減適用\"]",
+  )
+}
+
+///|
 test "global flags are removed from command args" {
   let parsed = parse_global_flags(["--describe", "--human", "session", "show"])
   inspect(parsed.describe, content="true")

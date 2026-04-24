@@ -604,31 +604,67 @@ fn add_inventory_item_json(
 }
 
 ///|
-fn drop_inventory_item_json(
+fn add_existing_inventory_item_json(
   source : String,
-  item : String,
+  item : Json,
 ) -> String raise TrpgFailure {
   let sheet = parse_sheet_object(source, "sheet_json")
   let inventory = item_objects_from_sheet_json(source)
+  let item_name = object_name(item, "item")
+  let item_id = json_string_field(item, "id", item_name)
+  for current in inventory {
+    if item_matches_id(current, item_id) ||
+      object_name(current, "item") == item_name {
+      fail(
+        TrpgError::Conflict(
+          "item already exists: \{item_name}",
+          Some("drop the current item first or rename it before transfer"),
+        ),
+      )
+    }
+  }
+  inventory.push(item)
+  sheet["inventory"] = Json::array(inventory)
+  Json::object(sheet).stringify()
+}
+
+///|
+fn take_inventory_item_json(
+  source : String,
+  item : String,
+) -> (String, Json) raise TrpgFailure {
+  let sheet = parse_sheet_object(source, "sheet_json")
+  let inventory = item_objects_from_sheet_json(source)
   let kept : Array[Json] = []
-  let mut found = false
+  let mut found : Json? = None
   for value in inventory {
-    if object_name(value, "item") == item {
-      found = true
+    if found == None && item_matches_id(value, item) {
+      found = Some(value)
     } else {
       kept.push(value)
     }
   }
-  if !found {
-    fail(
-      TrpgError::NotFound(
-        "item not found: \{item}",
-        Some("use `trpg item list` to inspect current inventory"),
-      ),
-    )
+  match found {
+    Some(current) => {
+      sheet["inventory"] = Json::array(kept)
+      (Json::object(sheet).stringify(), current)
+    }
+    None =>
+      fail(
+        TrpgError::NotFound(
+          "item not found: \{item}",
+          Some("use `trpg item list` to inspect current inventory"),
+        ),
+      )
   }
-  sheet["inventory"] = Json::array(kept)
-  Json::object(sheet).stringify()
+}
+
+///|
+fn drop_inventory_item_json(
+  source : String,
+  item : String,
+) -> String raise TrpgFailure {
+  take_inventory_item_json(source, item).0
 }
 
 ///|
@@ -660,6 +696,8 @@ fn actor_roll(
   bonus : Int,
   target : Int?,
   tags : Array[String],
+  scene_modifiers : Array[SceneModifierRow],
+  scene_target_modifier : Int,
   scene_warning : String?,
 ) -> ActorRollRow raise TrpgFailure {
   let preview = roll_preview(row, ability, tags)
@@ -699,7 +737,110 @@ fn actor_roll(
     modifiers: preview.modifiers,
     skipped_modifiers: preview.skipped_modifiers,
     consumed_statuses,
+    scene_modifiers,
+    scene_target_modifier,
     scene_warning,
+  }
+}
+
+///|
+fn scene_modifier_from_json(value : Json) -> SceneModifierRow {
+  {
+    name: json_string_field(value, "name", "scene modifier"),
+    target_delta: json_int_field(value, "target_delta", 0),
+    stat: json_string_opt_field(value, "stat"),
+    tags: json_string_array_field(value, "tags"),
+    note: json_string_field(value, "note", ""),
+    source: json_string_opt_field(value, "source"),
+    scope: json_string_field(value, "scope", "next_roll"),
+  }
+}
+
+///|
+fn scene_modifier_json(row : SceneModifierRow) -> Json {
+  let object : Map[String, Json] = {
+    "name": Json::string(row.name),
+    "target_delta": j_int(row.target_delta),
+    "tags": Json::array(row.tags.map(value => Json::string(value))),
+    "note": Json::string(row.note),
+    "scope": Json::string(row.scope),
+  }
+  match row.stat {
+    Some(value) => object["stat"] = Json::string(value)
+    None => ()
+  }
+  match row.source {
+    Some(value) => object["source"] = Json::string(value)
+    None => ()
+  }
+  Json::object(object)
+}
+
+///|
+fn format_scene_modifier(row : SceneModifierRow) -> String {
+  let delta_text = if row.target_delta >= 0 {
+    "+" + row.target_delta.to_string()
+  } else {
+    row.target_delta.to_string()
+  }
+  let tags_text = if row.tags.length() == 0 { "" } else { row.tags.join(",") }
+  let parts : Array[String] = [row.name, "target \{delta_text}"]
+  match row.stat {
+    Some(value) if !value.is_empty() => parts.push("stat=\{value}")
+    _ => ()
+  }
+  if !tags_text.is_empty() {
+    parts.push("tags=\{tags_text}")
+  }
+  match row.source {
+    Some(value) if !value.is_empty() => parts.push("source=\{value}")
+    _ => ()
+  }
+  if !row.note.is_empty() {
+    parts.push("note=\{row.note}")
+  }
+  parts.join(" / ")
+}
+
+///|
+fn apply_scene_modifiers(
+  modifiers : Array[SceneModifierRow],
+  ability : String,
+  tags : Array[String],
+  target : Int?,
+) -> (Int?, Int, Array[SceneModifierRow], Array[SceneModifierRow]) raise TrpgFailure {
+  match target {
+    None => (None, 0, [], modifiers)
+    Some(base_target) => {
+      let applied : Array[SceneModifierRow] = []
+      let remaining : Array[SceneModifierRow] = []
+      let mut delta_total = 0
+      for modifier in modifiers {
+        let stat_matches = match modifier.stat {
+          Some(value) if !value.is_empty() =>
+            normalize_ability(value) == ability
+          _ => true
+        }
+        let tag_matches = tags_match(modifier.tags, tags)
+        if modifier.scope == "next_roll" && stat_matches && tag_matches {
+          applied.push(modifier)
+          delta_total += modifier.target_delta
+        } else {
+          remaining.push(modifier)
+        }
+      }
+      let next_target = if delta_total == 0 {
+        base_target
+      } else {
+        let shifted = base_target + delta_total
+        if shifted < 2 {
+          2
+        } else {
+          shifted
+        }
+      }
+      (Some(next_target), delta_total, applied, remaining)
+    }
   }
 }
 
@@ -862,6 +1003,8 @@ fn actor_roll_json(row : ActorRollRow) -> Json {
     "consumed_statuses": Json::array(
       row.consumed_statuses.map(value => Json::string(value)),
     ),
+    "scene_modifiers": Json::array(row.scene_modifiers.map(scene_modifier_json)),
+    "scene_target_modifier": j_int(row.scene_target_modifier),
   }
   match row.target {
     Some(value) => object["target"] = j_int(value)
@@ -1007,10 +1150,17 @@ fn format_actor_roll(row : ActorRollRow) -> String {
   } else {
     "- " + row.skipped_modifiers.map(format_skipped_modifier).join("\n- ")
   }
+  let scene_modifiers = if row.scene_modifiers.length() == 0 {
+    "(なし)"
+  } else {
+    "- " + row.scene_modifiers.map(format_scene_modifier).join("\n- ")
+  }
   "\{row.actor} \{row.expr} = \{row.total}\{target_text} / \{row.outcome}\{margin_text}\{special_text}\n" +
   "base_stat=\{row.base_stat} auto_modifier_total=\{row.auto_modifier_total} bonus=\{row.bonus} total_modifier=\{row.total_modifier}\n" +
   "sources:\n" +
   sources +
+  "\nscene_modifiers:\n" +
+  scene_modifiers +
   "\nskipped_sources:\n" +
   skipped +
   "\nconsumed_statuses: " +

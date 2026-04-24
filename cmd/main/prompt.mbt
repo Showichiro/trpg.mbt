@@ -5,12 +5,13 @@ const RULES_TEXT : String =
   #|- 判定は `2d6 + 修正値 >= 目標値`。
   #|- 難易度は易 7 / 並 9 / 難 11。
   #|- 能力値は body / tech / mind。actor-aware `trpg roll <name> --stat ...` は能力値を修正値に加算する。
-  #|- traits / inventory item / status は `effect.stat == --stat` かつ tag が一致したときだけ自動適用される。GM は必要に応じて場面 tag を追加してよい。
+  #|- traits / inventory item / status は `effect.stat == --stat` かつ tag が一致したときだけ自動適用される。GM は必要に応じて場面 tag を追加してよいが、custom tag を足すと既存 trait/item/status の tag 一致が外れて auto apply が減ることがある。
   #|- 搦め手で scene の難易度を流用するときは `trpg roll <name> --scene-default --stat <other>` を優先する。準備・援護は原則 `trpg roll <name> --prep --stat <body|tech|mind>` を使う。`--prep` は target 未指定時に現在 scene の target を 2 下げ、scene target が無いときは 9 を使う。scene target を個別変更したいときだけ `--target N` を明示する。
-  #|- 準備や援護の成功は `trpg roll orion --prep --grant-to alice --grant tech:+1@ritual,seal` のように一時 status を自動付与してよい。手動なら `trpg status 名前 add --name 効果名 --source 援護者 --modifier tech:+1 --tags ritual,seal --uses 1 --on-trigger consume` を使う。本命ロールの stat に合わせて積む。
+  #|- 準備や援護の成功は `trpg roll orion --prep --grant-to alice --grant tech:+1@ritual,seal` のように一時 status を自動付与してよい。`--grant-to` に自分自身を指定して self-grant してもよい。手動なら `trpg status 名前 add --name 効果名 --source 援護者 --modifier tech:+1 --tags ritual,seal --uses 1 --on-trigger consume` を使う。本命ロールの stat に合わせて積む。
   #|- 数値判定は必ず `trpg roll`、HP 変動は必ず `trpg hp`、状態は必ず `trpg status` を使う。
   #|- goal に `scene_flag(...)` がある場合は `trpg scene flag` で進捗を更新する。
-  #|- 長い障害や repeated near miss は `trpg scene progress <key> <delta>` を使って累積進捗を残してよい。`duration=scene` の status は scene 遷移時に自動で消える。
+  #|- 長い障害や repeated near miss は `trpg scene progress <key> <delta>` を使って累積進捗を残してよい。同じ障害で 2 連続 near miss なら progress を 1 残し、3 連続なら `trpg scene modifier add --name "扉が緩む" --next-roll target:-2 --stat tech --tags forced-entry` のように次判定を 1 段階易化してよい。`duration=scene` の status は scene 遷移時に自動で消える。
+  #|- near miss / fumble / 強制進行の裁定は `trpg session note "HP 半減適用" --kind soften --ref-event 37` のように対応する event に紐づけて残してよい。
   #|- `special=crit` は難度 1 段階軽減相当、または `+2〜+3 / uses=1` の援護 status、または副次好機 1 つの目安として扱う。`special=fumble` は一段重く扱う。
   #|- プレイヤーは 1 ターンに 1 行動だけ宣言し、自分で数値結果を決めない。
 
@@ -144,11 +145,12 @@ fn compose_gm_prompt(
   "## GM 手順\n" +
   "- 判定が必要なときは `trpg roll 名前 --scene-default --stat tech --tags lockpick --context \"状況\"` のように actor-aware roll を使い、JSON の `outcome` / `margin` / `special` を引用する。準備・援護は `--prep` を優先し、scene target を個別変更したいときだけ `--target N` を明示する。\n" +
   "- HP 変動は `trpg hp 名前 -3 --context \"理由\"` のように CLI で更新する。\n" +
-  "- 状態は `trpg status 名前 add --name 毒 --source 司書の亡霊 --note \"効果量/継続条件/消費トリガー\" --modifier tech:-2 --tags ritual,seal --uses 1 --on-trigger consume` のように CLI で更新する。準備や援護は `--grant-to` / `--grant` で自動付与してよい。\n" +
+  "- 状態は `trpg status 名前 add --name 毒 --source 司書の亡霊 --note \"効果量/継続条件/消費トリガー\" --modifier tech:-2 --tags ritual,seal --uses 1 --on-trigger consume` のように CLI で更新する。準備や援護は `--grant-to` / `--grant` で自動付与してよく、self-grant してもよい。\n" +
   "- シーン転換時は `trpg session scene <id> [--note \"変化\"]` を使う。\n" +
-  "- 同じ障害に near miss が続いたら、`trpg scene progress obstacle +1 --note \"扉が緩む\"` のように累積進捗を残してよい。\n" +
+  "- 同じ障害で 2 連続 near miss なら、`trpg scene progress obstacle +1 --note \"扉が緩む\"` のように累積進捗を残す。3 連続なら `trpg scene modifier add --name \"扉が緩む\" --next-roll target:-2 --stat tech --tags forced-entry` のように次判定を 1 段階易化してよい。\n" +
+  "- near miss / fumble / 強制進行の裁定は `trpg session note \"HP 半減適用\" --kind soften --ref-event 37` のように対応 event に紐づけて残してよい。\n" +
   "- goal に `scene_flag(...)` がある場合は `trpg scene flag <key> <value>` を打つ。途中確認は `trpg session goals` を使う。\n" +
-  "- アイテム獲得・喪失は `trpg item give/drop 名前 アイテム名 [--note \"理由\"]` を使う。\n" +
+  "- アイテム獲得・喪失は `trpg item give/drop 名前 アイテム名 [--note \"理由\"]`、受け渡しは `trpg item transfer A B アイテム名 [--note \"理由\"]` を使う。\n" +
   "- NPC の対抗判定は `trpg contest`、攻撃は `trpg attack` を使う。\n" +
   "- 描写の最後に、次に行動する相手を明示して「あなたの番です」と振る。"
 }

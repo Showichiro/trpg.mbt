@@ -124,6 +124,17 @@ struct RollPreview {
 }
 
 ///|
+struct SceneModifierRow {
+  name : String
+  target_delta : Int
+  stat : String?
+  tags : Array[String]
+  note : String
+  source : String?
+  scope : String
+}
+
+///|
 struct ActorRollRow {
   actor : String
   ability : String
@@ -141,6 +152,8 @@ struct ActorRollRow {
   modifiers : Array[ModifierPreviewRow]
   skipped_modifiers : Array[SkippedModifierRow]
   consumed_statuses : Array[String]
+  scene_modifiers : Array[SceneModifierRow]
+  scene_target_modifier : Int
   scene_warning : String?
 }
 
