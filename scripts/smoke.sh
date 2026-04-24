@@ -170,6 +170,11 @@ if grep -q 'applied_at_ms' /tmp/trpg-prompt-player-before-scene.txt; then
   exit 1
 fi
 
+if grep -q 'quality_tier' /tmp/trpg-prompt-player-before-scene.txt; then
+  echo "smoke: expected human prompt player output to hide runtime tuning" >&2
+  exit 1
+fi
+
 if ! grep -q 'プレイスタイル' /tmp/trpg-prompt-player-before-scene.txt; then
   echo "smoke: expected prompt player to include play style" >&2
   exit 1
@@ -187,6 +192,21 @@ fi
 
 if ! grep -q '"id":"supportive"' /tmp/trpg-pc-style-set.json; then
   echo "smoke: expected pc style set to persist explicit style" >&2
+  exit 1
+fi
+
+if ! grep -q '"handoff_text":"' /tmp/trpg-prompt-player-brief.json; then
+  echo "smoke: expected JSON prompt player output to include handoff_text" >&2
+  exit 1
+fi
+
+if ! grep -q 'quality_tier' /tmp/trpg-prompt-player-brief.json; then
+  echo "smoke: expected handoff_text to include hidden quality tier" >&2
+  exit 1
+fi
+
+if ! grep -q 'immersion_tier' /tmp/trpg-prompt-player-brief.json; then
+  echo "smoke: expected handoff_text to include hidden immersion tier" >&2
   exit 1
 fi
 

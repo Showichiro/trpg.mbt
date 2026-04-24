@@ -146,6 +146,24 @@ struct PlayStyleRow {
 }
 
 ///|
+struct QualityTierRow {
+  id : String
+  summary : String
+}
+
+///|
+struct ImmersionTierRow {
+  id : String
+  summary : String
+}
+
+///|
+struct PlayerRuntimeRow {
+  quality : QualityTierRow
+  immersion : ImmersionTierRow
+}
+
+///|
 struct ActorRollRow {
   actor : String
   ability : String

@@ -77,35 +77,80 @@ fn prompt_player(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let brief = flag_present(global.args, "--brief")
   let history_limit = if brief { 5 } else { 12 }
   let history = recent_history(db, session.id, history_limit)
-  let prompt = "あなたは TRPG セッションのプレイヤーです。\n\n" +
-    "与えられた PC を演じ、1 ターンに 1 つだけ自然な日本語で行動宣言してください。\n" +
-    "数値判定・ダメージ・成功失敗は決めず、必要なら GM に判定を促してください。\n\n" +
-    "## セッション\n" +
-    "現在シーン: \{session.current_scene}\n" +
-    current_scene_description(scenario, session.current_scene) +
-    "\n\n" +
-    "## プレイスタイル\n" +
-    format_play_style_prompt(style, brief) +
-    "\n\n" +
-    "## PC\n" +
-    format_player_character_prompt(row, brief) +
-    "\n\n" +
-    "## パーティ状態\n" +
-    format_characters_for_prompt(characters, brief) +
-    "\n\n" +
-    "## 直近履歴\n" +
-    format_history_for_prompt(history)
+  let runtime = random_player_runtime()
+  let inspection_prompt = compose_player_prompt(
+    session,
+    scenario,
+    row,
+    style,
+    None,
+    characters,
+    history,
+    brief,
+  )
+  let handoff_prompt = compose_player_prompt(
+    session,
+    scenario,
+    row,
+    style,
+    Some(runtime),
+    characters,
+    history,
+    brief,
+  )
   let json = Json::object({
     "command": "prompt.player",
     "name": Json::string(name),
     "brief": Json::boolean(brief),
     "play_style": play_style_json(style),
-    "text": Json::string(prompt),
+    "text": Json::string(inspection_prompt),
+    "handoff_text": Json::string(handoff_prompt),
   })
   output_success(
-    { json, human: prompt, stderr: "Player プロンプトを出力: \{name}" },
+    {
+      json,
+      human: inspection_prompt,
+      stderr: "Player プロンプトを出力: \{name}",
+    },
     global,
   )
+}
+
+///|
+fn compose_player_prompt(
+  session : SessionRow,
+  scenario : Json,
+  row : CharacterRow,
+  style : PlayStyleRow,
+  runtime : PlayerRuntimeRow?,
+  characters : Array[CharacterRow],
+  history : Array[HistoryEntry],
+  brief : Bool,
+) -> String {
+  let intro = "あなたは TRPG セッションのプレイヤーです。\n\n" +
+    "与えられた PC を演じ、1 ターンに 1 つだけ自然な日本語で行動宣言してください。\n" +
+    "数値判定・ダメージ・成功失敗は決めず、必要なら GM に判定を促してください。\n\n"
+  let runtime_text = match runtime {
+    Some(value) => format_player_runtime_prompt(value) + "\n\n"
+    None => ""
+  }
+  intro +
+  runtime_text +
+  "## セッション\n" +
+  "現在シーン: \{session.current_scene}\n" +
+  current_scene_description(scenario, session.current_scene) +
+  "\n\n" +
+  "## プレイスタイル\n" +
+  format_play_style_prompt(style, brief) +
+  "\n\n" +
+  "## PC\n" +
+  format_player_character_prompt(row, brief) +
+  "\n\n" +
+  "## パーティ状態\n" +
+  format_characters_for_prompt(characters, brief) +
+  "\n\n" +
+  "## 直近履歴\n" +
+  format_history_for_prompt(history)
 }
 
 ///|

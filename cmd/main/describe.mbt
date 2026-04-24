@@ -128,7 +128,7 @@ fn describe_commands_json() -> Json {
         "GM 用プロンプトを合成する", "trpg prompt gm [--brief] [--human]",
       ),
       "prompt.player": command_descriptor(
-        "Player 用プロンプトを合成する", "trpg prompt player <name> [--brief] [--human]  # 初回実行時に play_style をランダム割当して session に保存",
+        "Player 用プロンプトを合成する", "trpg prompt player <name> [--brief] [--human]  # 初回実行時に play_style をランダム割当して session に保存。JSON には subagent handoff 用の handoff_text を含む",
       ),
       "prompt.rules": command_descriptor(
         "ルール要約を出力する", "trpg prompt rules [--human]",

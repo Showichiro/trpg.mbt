@@ -29,6 +29,8 @@ type GrantedStatusRow
 
 type HistoryEntry
 
+type ImmersionTierRow
+
 type LogRow
 
 type ModifierPreviewRow
@@ -36,6 +38,10 @@ type ModifierPreviewRow
 type ModifierResolution
 
 type PlayStyleRow
+
+type PlayerRuntimeRow
+
+type QualityTierRow
 
 type RollEval
 
