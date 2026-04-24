@@ -38,13 +38,14 @@ trpg pc templates list
 trpg pc add alice --template alice
 trpg pc show alice --for-roll tech --tags forced-entry
 trpg scene show
+trpg roll alice --preview --scene-default --stat tech --tags forced-entry --skip-status "祝福"
 trpg roll alice --stat tech --scene-default --tags forced-entry --context "重い扉の解錠"
 trpg roll orion --prep --scene-default --stat mind --grant-to alice --grant tech:+1@ritual,seal --grant-name 譜面援護 --grant-uses 2 --grant-duration scene --grant-on-trigger consume --context "封印の手順を譜面に落とし込む"
 trpg status alice add --name 祝福 --source orion --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume
 trpg scene progress entrance-door +1 --note "蝶番が少し緩んだ"
 trpg scene modifier add --name "扉が緩む" --next-roll target:-2 --stat tech --tags forced-entry --note "次の解錠を少し易しくする"
 trpg item give alice "銀の鍵" --desc "封印石棺の鍵"
-trpg item transfer alice orion "銀の鍵" --note "封印役へ渡す"
+trpg item transfer alice orion "銀の鍵" --add-tags ritual,seal --set-effect mind:+1 --note "封印役へ渡す"
 trpg contest alice "司書の亡霊" --a-stat tech --b-stat mind --context "鍵の所在を探る"
 trpg attack "司書の亡霊" alice --atk mind --def tech --damage 1d6 --context "怨念の奔流"
 trpg hp alice -3 --context "怨念の余波"
@@ -83,7 +84,9 @@ scene default を使う搦め手では `trpg roll orion --scene-default --stat t
 
 `--tags` は comma-separated です。複数タグは `--tags ritual,seal` のように 1 引数で渡してください。`--tags ritual seal` は usage error になります。
 
-準備判定や援護判定の成功は、原則 `trpg roll ... --grant-to <target> --grant tech:+1@ritual,seal` で一時 status を自動付与します。`--grant-name`、`--grant-uses N`、`--grant-duration scene|infinite`、`--grant-on-trigger consume|persist` で挙動を明示指定できます。デフォルトは `uses=1 / on_trigger=consume / duration 指定なし` で、consume されるまで scene を跨いで残ります。`--grant-to` に自分自身を指定して self-grant しても構いません。手動で積む場合は `trpg status ... add --name ... --source 援護者 --uses 1 --on-trigger consume` を使い、本命ロールの stat に合わせた `--modifier <stat>:+N` を指定してください。
+準備判定や援護判定の成功は、原則 `trpg roll ... --grant-to <target> --grant tech:+1@ritual,seal` で一時 status を自動付与します。`--grant-name`、`--grant-uses N`、`--grant-duration scene|infinite`、`--grant-on-trigger consume|persist` で挙動を明示指定できます。デフォルトは `uses=1 / on_trigger=consume / duration 指定なし` で、consume されるまで scene を跨いで残ります。今の実装では `duration 指定なし` と `duration=infinite` は同じ挙動です。`--grant-to` に自分自身を指定して self-grant しても構いません。手動で積む場合は `trpg status ... add --name ... --source 援護者 --uses 1 --on-trigger consume` を使い、本命ロールの stat に合わせた `--modifier <stat>:+N` を指定してください。
+
+ロール前に stack だけ見たいときは `trpg roll <name> --preview ...` を使います。これは実ロールと同じ解決経路で `sources / skipped_sources / target / scene modifier / grant_plan` を返しますが、ダイスは振らず、status 消費や grant も発生させません。`--skip-status "状態名"` を付けると、そのロールだけ auto-apply を外して温存できます。
 
 `margin=0` は純粋な HIT として扱います。機械的不利は付けず、必要なら描写上の緊張感だけ残してください。`margin>=3` は `special=crit` ではありませんが、副次好機 1 つを検討してよい目安です。`special=crit` は「難度 1 段階軽減相当」「`+2〜+3 / uses=1` の援護 status」「副次好機 1 つ」のいずれかを目安に扱うと安定します。`special=fumble` は一段重く扱います。
 
@@ -91,7 +94,7 @@ scene default を使う搦め手では `trpg roll orion --scene-default --stat t
 
 `trpg prompt player <name>` を初めて呼ぶと、その PC が subagent 運用対象とみなされ、session 内に play style がランダム割当されます。style は提案傾向にだけ効き、数値補正ではありません。同じ PC をその session 中に何度 handoff しても同じ style が使われます。さらに、subagent には毎ターン hidden な `quality` と `immersion` の runtime tuning が与えられ、時々かなり筋の良い手、時々かなり雑で妙な手、時々解決より対話や観察を優先する手が混ざります。確認や調整には `trpg pc style show <name>`、再抽選には `trpg pc style reroll <name>`、明示指定には `trpg pc style set <name> <style_id>` を使ってください。
 
-`trpg session goals` は現在の goal 達成状況を軽量に確認します。`scene_flag(...)` 条件を持つ goal を運用するときは、`trpg scene flag` とセットで使ってください。`inventory_ever_contained(...)` は「一度でも保持した」を sticky に評価する goal です。flag 更新後は `trpg prompt gm --human` を取り直すと文脈が揃います。
+`trpg session goals` は現在の goal 達成状況を軽量に確認します。`scene_flag(...)` 条件を持つ goal を運用するときは、`trpg scene flag` とセットで使ってください。`trpg scene flag` は current scene にしか書き込まず、goal 判定も指定 scene の flags だけを見ます。違う scene で立てた flag はその goal には効きません。`inventory_ever_contained(...)` は「一度でも保持した」を sticky に評価する goal です。flag 更新後は `trpg prompt gm --human` を取り直すと文脈が揃います。
 
 `trpg scene set <key>` は互換 alias として残していますが、新規運用では `trpg scene list|show|next` と `trpg session scene <key> [--note text]` を使ってください。
 
@@ -99,7 +102,7 @@ scene default を使う搦め手では `trpg roll orion --scene-default --stat t
 
 near miss や fumble の軽減裁定は、`trpg session note "HP 半減適用" --kind soften --ref-event 37` のように対応 event に紐づけて残せます。後から `session report` や `log show` を見返すときに追跡しやすくなります。
 
-`duration=scene` の status は scene 遷移時に自動で消えます。シーン跨ぎで残したい効果だけ別 duration を使ってください。
+`duration=scene` の status は scene 遷移時に自動で消えます。シーン跨ぎで残したい効果だけ別 duration を使ってください。アイテム操作は「新規取得 = give」「受け渡し = transfer」「消耗・破棄 = drop」で分けると迷いません。NPC の初期 inventory を PC へ渡す定番フローも `trpg item transfer 司書の亡霊 orion 銀の鍵` の一発で済みます。
 
 `trpg pc show <name> --for-roll <body|tech|mind> --tags ...` は、実際の `roll` と同じ自動合算プレビューを返します。
 

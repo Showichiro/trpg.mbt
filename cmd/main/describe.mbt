@@ -34,7 +34,7 @@ fn describe_commands_json() -> Json {
         "PC を登録する", "trpg pc add <name> (--from <path> | --template <template_id>)",
       ),
       "pc.show": command_descriptor(
-        "PC/NPC を表示する", "trpg pc show <name> [--for-roll body|tech|mind] [--tags lockpick,ritual]",
+        "PC/NPC を表示する", "trpg pc show <name> [--for-roll body|tech|mind] [--tags lockpick,ritual] [--skip-status status1,status2]",
       ),
       "pc.style.show": command_descriptor(
         "PC の play style を表示する", "trpg pc style show <name>",
@@ -49,7 +49,7 @@ fn describe_commands_json() -> Json {
         "利用可能な PC template を表示する", "trpg pc templates list",
       ),
       "roll": command_descriptor(
-        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--bonus N] [--target N|--scene-default|--prep] [--tags tag1,tag2] [--grant-to <name> --grant <ability:+N@tag1,tag2> [--grant-name <status_name>] [--grant-uses N] [--grant-duration scene|infinite] [--grant-on-trigger consume|persist]] [--context text]  # --scene-default は scene tags と --tags を union、--prep は target 未指定時に scene target-2、無ければ 9",
+        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--preview] [--bonus N] [--target N|--scene-default|--prep] [--tags tag1,tag2] [--skip-status status1,status2] [--grant-to <name> --grant <ability:+N@tag1,tag2> [--grant-name <status_name>] [--grant-uses N] [--grant-duration scene|infinite] [--grant-on-trigger consume|persist]] [--context text]  # --scene-default は scene tags と --tags を union、--prep は target 未指定時に scene target-2、無ければ 9",
       ),
       "roll.history": command_descriptor(
         "判定履歴を表示する", "trpg roll history [--as name] [-n N]",
@@ -73,7 +73,7 @@ fn describe_commands_json() -> Json {
         "アイテムを削除する", "trpg item drop <name> <item> [--note text]",
       ),
       "item.transfer": command_descriptor(
-        "アイテムを別キャラクターへ移す", "trpg item transfer <from> <to> <item> [--note text]",
+        "アイテムを別キャラクターへ移す", "trpg item transfer <from> <to> <item> [--add-tags tag1,tag2] [--set-effect ability:+N] [--note text]",
       ),
       "item.list": command_descriptor(
         "インベントリを表示する", "trpg item list [<name>]",
@@ -101,7 +101,7 @@ fn describe_commands_json() -> Json {
       ),
       "scene.flag": command_descriptor(
         "現在シーンのフラグを設定する (goal 条件の進行に使う)",
-        "trpg scene flag <key> <value>",
+        "trpg scene flag <key> <value>  # current scene のみを書き換える。goal の scene_flag は指定 scene の flags だけを見る",
       ),
       "scene.progress": command_descriptor(
         "現在シーンの進捗カウンタを増減する", "trpg scene progress <key> <delta> [--note text]",

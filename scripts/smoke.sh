@@ -66,17 +66,18 @@ trpg pc templates list >/tmp/trpg-pc-templates.json
 trpg pc add alice --template alice >/tmp/trpg-pc-add.json
 trpg pc style show alice >/tmp/trpg-pc-style-before.json
 trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show.json
+trpg roll alice --preview --scene-default --stat tech --tags forced-entry >/tmp/trpg-roll-preview.json
 trpg roll alice --stat body --scene-default --context "入口の扉を押し開ける" >/tmp/trpg-roll-open.json
 trpg status alice add --name 祝福 --source gm --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume >/tmp/trpg-status.json
 trpg status alice add --name 動揺 --modifier body:-1 --tags forced-entry,ruins --duration scene >/tmp/trpg-status-scene.json
 trpg roll alice --prep --stat tech --tags forced-entry --bonus 12 --grant-to alice --grant tech:+1@forced-entry --grant-name 足場援護 --grant-uses 2 --grant-duration scene --grant-on-trigger consume --context "足場を整える" >/tmp/trpg-roll-prep.json
 trpg roll alice --prep --scene-default --stat tech --tags forced-entry --bonus 10 --grant-to alice --grant tech:+1@forced-entry --grant-name 残る援護 --grant-uses 2 --grant-duration scene --grant-on-trigger persist --context "もう一段、支点を整える" >/tmp/trpg-roll-grant-custom.json
 trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show-after-prep.json
-trpg roll alice --stat tech --tags forced-entry --target 10 --context "扉の解錠" >/tmp/trpg-roll.json
+trpg roll alice --stat tech --tags forced-entry --target 10 --skip-status "残る援護" --context "扉の解錠" >/tmp/trpg-roll.json
 trpg roll alice --stat mind --target 9 --tags ritual,seal --context "譜面を読み替えて補助線を探る" >/tmp/trpg-roll-alt-target.json
 trpg hp alice -3 --context "扉の反動" >/tmp/trpg-hp.json
 trpg item give alice "銀の鍵" --desc "封印石棺の鍵" >/tmp/trpg-item-give.json
-trpg item transfer alice "司書の亡霊" "短剣" --note "司書へ預けた" >/tmp/trpg-item-transfer.json
+trpg item transfer alice "司書の亡霊" "短剣" --add-tags ritual,seal --set-effect mind:+1 --note "司書へ預けた" >/tmp/trpg-item-transfer.json
 trpg log add "扉を開けた" --as alice >/tmp/trpg-log-add.json
 trpg log show --kind roll -n 5 >/tmp/trpg-log-show.json
 trpg roll history --as alice -n 5 >/tmp/trpg-roll-history.json

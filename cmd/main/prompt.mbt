@@ -7,9 +7,10 @@ const RULES_TEXT : String =
   #|- 能力値は body / tech / mind。actor-aware `trpg roll <name> --stat ...` は能力値を修正値に加算する。
   #|- traits / inventory item / status は `effect.stat == --stat` かつ tag が一致したときだけ自動適用される。GM は必要に応じて場面 tag を追加してよいが、custom tag を足すと既存 trait/item/status の tag 一致が外れて auto apply が減ることがある。まず既存 scene tag に丸め、auto-apply を意図的に変えたいときだけ新規 tag を足す。
   #|- 搦め手で scene の難易度を流用するときは `trpg roll <name> --scene-default --stat <other>` を優先する。`--scene-default` と `--tags` は union され、override ではない。準備・援護は原則 `trpg roll <name> --prep --stat <body|tech|mind>` を使う。`--prep` は target 未指定時に現在 scene の target を 2 下げ、scene target が無いときは 9 を使う。`--prep --scene-default` は併用可で、target は prep 側、scene tags は scene-default 側からも使う。scene target を個別変更したいときだけ `--target N` を明示する。
-  #|- 準備や援護の成功は `trpg roll orion --prep --grant-to alice --grant tech:+1@ritual,seal` のように一時 status を自動付与してよい。`--grant-name`、`--grant-uses N`、`--grant-duration scene|infinite`、`--grant-on-trigger consume|persist` を使って挙動を明示指定できる。デフォルトは `uses=1 / on_trigger=consume / duration 指定なし` で、consume されるまで scene を跨いで残る。`--grant-to` に自分自身を指定して self-grant してもよい。手動なら `trpg status 名前 add --name 効果名 --source 援護者 --modifier tech:+1 --tags ritual,seal --uses 1 --on-trigger consume` を使う。本命ロールの stat に合わせて積む。
+  #|- 準備や援護の成功は `trpg roll orion --prep --grant-to alice --grant tech:+1@ritual,seal` のように一時 status を自動付与してよい。`--grant-name`、`--grant-uses N`、`--grant-duration scene|infinite`、`--grant-on-trigger consume|persist` を使って挙動を明示指定できる。デフォルトは `uses=1 / on_trigger=consume / duration 指定なし` で、consume されるまで scene を跨いで残る。今の実装では `duration 指定なし` と `duration=infinite` は同じである。`--grant-to` に自分自身を指定して self-grant してもよい。手動なら `trpg status 名前 add --name 効果名 --source 援護者 --modifier tech:+1 --tags ritual,seal --uses 1 --on-trigger consume` を使う。本命ロールの stat に合わせて積む。
+  #|- ロール前に何が乗るかだけ確認したいときは `trpg roll <name> --preview ...` を使う。必要なら `--skip-status "状態名"` でそのロールだけ auto-apply を外して温存してよい。
   #|- 数値判定は必ず `trpg roll`、HP 変動は必ず `trpg hp`、状態は必ず `trpg status` を使う。
-  #|- goal に `scene_flag(...)` がある場合は `trpg scene flag` で進捗を更新する。
+  #|- goal に `scene_flag(...)` がある場合は `trpg scene flag` で進捗を更新する。`scene flag` は current scene にしか書かれず、goal 判定も指定 scene の flags だけを見る。
   #|- 長い障害や repeated near miss は `trpg scene progress <key> <delta>` を使って累積進捗を残してよい。同じ障害で 2 連続 near miss なら progress を 1 残し、3 連続なら `trpg scene modifier add --name "扉が緩む" --next-roll target:-2 --stat tech --tags forced-entry` のように次判定を 1 段階易化してよい。`duration=scene` の status は scene 遷移時に自動で消える。
   #|- near miss / fumble / 強制進行の裁定は `trpg session note "HP 半減適用" --kind soften --ref-event 37` のように対応する event に紐づけて残してよい。
   #|- `margin=0` は純粋な HIT として扱い、機械的不利は付けない。必要なら描写上の緊張感だけ残してよい。
@@ -197,12 +198,13 @@ fn compose_gm_prompt(
   "## GM 手順\n" +
   "- 判定が必要なときは `trpg roll 名前 --scene-default --stat tech --tags lockpick --context \"状況\"` のように actor-aware roll を使い、JSON の `outcome` / `margin` / `special` を引用する。`--scene-default` と `--tags` は union される。準備・援護は `--prep` を優先し、`--prep --scene-default` は併用してよい。scene target を個別変更したいときだけ `--target N` を明示する。\n" +
   "- HP 変動は `trpg hp 名前 -3 --context \"理由\"` のように CLI で更新する。\n" +
-  "- 状態は `trpg status 名前 add --name 毒 --source 司書の亡霊 --note \"効果量/継続条件/消費トリガー\" --modifier tech:-2 --tags ritual,seal --uses 1 --on-trigger consume` のように CLI で更新する。準備や援護は `--grant-to` / `--grant` で自動付与してよく、`--grant-name` / `--grant-uses` / `--grant-duration` / `--grant-on-trigger` で挙動を明示指定できる。指定しない場合は `uses=1 / on_trigger=consume / duration 指定なし` で、consume されるまで scene を跨いで残る。self-grant してもよい。\n" +
+  "- 状態は `trpg status 名前 add --name 毒 --source 司書の亡霊 --note \"効果量/継続条件/消費トリガー\" --modifier tech:-2 --tags ritual,seal --uses 1 --on-trigger consume` のように CLI で更新する。準備や援護は `--grant-to` / `--grant` で自動付与してよく、`--grant-name` / `--grant-uses` / `--grant-duration` / `--grant-on-trigger` で挙動を明示指定できる。指定しない場合は `uses=1 / on_trigger=consume / duration 指定なし` で、consume されるまで scene を跨いで残る。今の実装では `duration 指定なし` と `duration=infinite` は同じである。self-grant してもよい。\n" +
   "- シーン転換時は `trpg session scene <id> [--note \"変化\"]` を使う。\n" +
   "- 同じ障害で 2 連続 near miss なら、`trpg scene progress obstacle +1 --note \"扉が緩む\"` のように累積進捗を残す。3 連続なら `trpg scene modifier add --name \"扉が緩む\" --next-roll target:-2 --stat tech --tags forced-entry` のように次判定を 1 段階易化してよい。\n" +
   "- near miss / fumble / 強制進行の裁定は `trpg session note \"HP 半減適用\" --kind soften --ref-event 37` のように対応 event に紐づけて残してよい。\n" +
-  "- goal に `scene_flag(...)` がある場合は `trpg scene flag <key> <value>` を打つ。途中確認は `trpg session goals` を使う。\n" +
-  "- アイテム獲得・喪失は `trpg item give/drop 名前 アイテム名 [--note \"理由\"]`、受け渡しは `trpg item transfer A B アイテム名 [--note \"理由\"]` を使う。\n" +
+  "- goal に `scene_flag(...)` がある場合は `trpg scene flag <key> <value>` を打つ。`scene flag` は current scene にしか書かれず、goal 判定も指定 scene の flags だけを見る。途中確認は `trpg session goals` を使う。\n" +
+  "- ロール前に何が乗るかだけ確認したいときは `trpg roll 名前 --preview ...` を使う。必要なら `--skip-status \"状態名\"` でそのロールだけ auto-apply を外してよい。\n" +
+  "- アイテム獲得・喪失は `trpg item give/drop 名前 アイテム名 [--note \"理由\"]`、受け渡しは `trpg item transfer A B アイテム名 [--add-tags ritual,seal] [--set-effect mind:+1] [--note \"理由\"]` を使う。新規取得は give、受け渡しは transfer、消耗・破棄は drop を使う。\n" +
   "- NPC の対抗判定は `trpg contest`、攻撃は `trpg attack` を使う。\n" +
   "- 描写の最後に、次に行動する相手を明示して「あなたの番です」と振る。"
 }

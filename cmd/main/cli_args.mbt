@@ -50,8 +50,10 @@ fn option_takes_value(arg : String) -> Bool {
   arg == "--stat" ||
   arg == "--bonus" ||
   arg == "--tags" ||
+  arg == "--add-tags" ||
   arg == "--desc" ||
   arg == "--effect" ||
+  arg == "--set-effect" ||
   arg == "--context" ||
   arg == "--by" ||
   arg == "--name" ||
@@ -77,6 +79,7 @@ fn option_takes_value(arg : String) -> Bool {
   arg == "--grant-uses" ||
   arg == "--grant-duration" ||
   arg == "--grant-on-trigger" ||
+  arg == "--skip-status" ||
   arg == "--next-roll" ||
   arg == "--atk" ||
   arg == "--def" ||
@@ -91,6 +94,7 @@ fn option_takes_value(arg : String) -> Bool {
 ///|
 fn tag_option_takes_csv(arg : String) -> Bool {
   arg == "--tags" ||
+  arg == "--add-tags" ||
   arg == "--a-tags" ||
   arg == "--b-tags" ||
   arg == "--atk-tags" ||

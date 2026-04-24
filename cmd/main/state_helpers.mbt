@@ -381,6 +381,7 @@ fn status_modifiers(
   source : String,
   ability : String,
   tags : Array[String],
+  skip_statuses : Array[String],
 ) -> ModifierResolution raise TrpgFailure {
   let matched : Array[ModifierPreviewRow] = []
   let skipped : Array[SkippedModifierRow] = []
@@ -404,7 +405,12 @@ fn status_modifiers(
       }
     }
     for effect in effects {
-      match effect_skip_reason(effect, ability, tags) {
+      let reason = if string_array_contains(skip_statuses, name) {
+        Some("manually_skipped")
+      } else {
+        effect_skip_reason(effect, ability, tags)
+      }
+      match reason {
         Some(reason) =>
           skipped.push(
             skipped_modifier_row("status", name, effect, reason, ability, tags),
@@ -426,6 +432,7 @@ fn matching_modifiers(
   row : CharacterRow,
   ability : String,
   tags : Array[String],
+  skip_statuses : Array[String],
 ) -> ModifierResolution raise TrpgFailure {
   let matched : Array[ModifierPreviewRow] = []
   let skipped : Array[SkippedModifierRow] = []
@@ -443,7 +450,12 @@ fn matching_modifiers(
   for item in item_rows.skipped {
     skipped.push(item)
   }
-  let status_rows = status_modifiers(row.conditions_json, ability, tags)
+  let status_rows = status_modifiers(
+    row.conditions_json,
+    ability,
+    tags,
+    skip_statuses,
+  )
   for item in status_rows.matched {
     matched.push(item)
   }
@@ -629,6 +641,59 @@ fn add_existing_inventory_item_json(
 }
 
 ///|
+fn update_inventory_item_json(
+  item : Json,
+  add_tags : Array[String],
+  effect_spec : String?,
+) -> Json raise TrpgFailure {
+  if add_tags.length() == 0 && effect_spec == None {
+    item
+  } else {
+    let object = parse_sheet_object(item.stringify(), "inventory_item")
+    let existing_effects = json_array_field(item, "effects")
+    let combined_tags : Array[String] = []
+    for effect in existing_effects {
+      for tag in effect_tags(effect) {
+        if !string_array_contains(combined_tags, tag) {
+          combined_tags.push(tag)
+        }
+      }
+    }
+    for tag in add_tags {
+      if !string_array_contains(combined_tags, tag) {
+        combined_tags.push(tag)
+      }
+    }
+    match effect_spec {
+      Some(spec) => {
+        let (ability, amount) = parse_modifier_spec(spec)
+        object["effects"] = Json::array([
+          effect_json(ability, amount, combined_tags, "roll"),
+        ])
+      }
+      None =>
+        if add_tags.length() > 0 && existing_effects.length() > 0 {
+          object["effects"] = Json::array(
+            existing_effects.map(effect => {
+              let effect_object = parse_sheet_object(
+                effect.stringify(),
+                "inventory_item.effect",
+              )
+              effect_object["tags"] = Json::array(
+                unique_strings(effect_tags(effect) + add_tags).map(value => {
+                  Json::string(value)
+                }),
+              )
+              Json::object(effect_object)
+            }),
+          )
+        }
+    }
+    Json::object(object)
+  }
+}
+
+///|
 fn take_inventory_item_json(
   source : String,
   item : String,
@@ -673,8 +738,18 @@ fn roll_preview(
   ability : String,
   tags : Array[String],
 ) -> RollPreview raise TrpgFailure {
+  roll_preview_with_skips(row, ability, tags, [])
+}
+
+///|
+fn roll_preview_with_skips(
+  row : CharacterRow,
+  ability : String,
+  tags : Array[String],
+  skip_statuses : Array[String],
+) -> RollPreview raise TrpgFailure {
   let normalized = normalize_ability(ability)
-  let resolution = matching_modifiers(row, normalized, tags)
+  let resolution = matching_modifiers(row, normalized, tags, skip_statuses)
   let mut auto_total = 0
   for modifier in resolution.matched {
     auto_total += modifier.amount
@@ -700,7 +775,32 @@ fn actor_roll(
   scene_target_modifier : Int,
   scene_warning : String?,
 ) -> ActorRollRow raise TrpgFailure {
-  let preview = roll_preview(row, ability, tags)
+  actor_roll_with_skips(
+    row,
+    ability,
+    bonus,
+    target,
+    tags,
+    scene_modifiers,
+    scene_target_modifier,
+    scene_warning,
+    [],
+  )
+}
+
+///|
+fn actor_roll_with_skips(
+  row : CharacterRow,
+  ability : String,
+  bonus : Int,
+  target : Int?,
+  tags : Array[String],
+  scene_modifiers : Array[SceneModifierRow],
+  scene_target_modifier : Int,
+  scene_warning : String?,
+  skip_statuses : Array[String],
+) -> ActorRollRow raise TrpgFailure {
+  let preview = roll_preview_with_skips(row, ability, tags, skip_statuses)
   let total_modifier = preview.base_stat + preview.auto_total + bonus
   let sign = if total_modifier > 0 {
     "+" + total_modifier.to_string()
@@ -1077,6 +1177,7 @@ fn format_skipped_modifier(row : SkippedModifierRow) -> String {
     "tag_mismatch" =>
       "tag_mismatch effect_tags=\{effect_tags_text} requested_tags=\{requested_tags_text}"
     "trigger_mismatch" => "trigger_mismatch trigger=\{row.effect_trigger}"
+    "manually_skipped" => "manually_skipped"
     _ => row.reason
   }
   "[\{row.kind}] \{row.name} / \{reason_text}"

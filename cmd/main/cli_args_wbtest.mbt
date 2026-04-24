@@ -12,7 +12,8 @@ test "positional args skip prep and grant flags" {
   let args = [
     "roll", "orion", "--prep", "--scene-default", "--stat", "mind", "--grant-to",
     "alice", "--grant", "tech:+1@ritual,seal", "--grant-name", "譜面援護", "--grant-uses",
-    "2", "--grant-duration", "scene", "--grant-on-trigger", "persist",
+    "2", "--grant-duration", "scene", "--grant-on-trigger", "persist", "--skip-status",
+    "祝福",
   ]
   inspect(positional_args(args), content="[\"roll\", \"orion\"]")
 }
@@ -47,8 +48,8 @@ test "global flags are removed from command args" {
 ///|
 test "csv tag options accept comma-separated values" {
   validate_csv_tag_options([
-    "status", "alice", "add", "儀式譜面", "--tags", "ritual,seal", "--uses",
-    "1",
+    "status", "alice", "add", "儀式譜面", "--tags", "ritual,seal", "--add-tags",
+    "ancient-text,seal", "--uses", "1",
   ])
 }
 

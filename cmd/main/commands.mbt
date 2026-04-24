@@ -603,11 +603,13 @@ fn pc_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let row = require_character(db, session.id, name)
   match option_value(global.args, "--for-roll") {
     Some(ability) => {
-      let preview = roll_preview(
-        row,
-        ability,
-        parse_tags_csv(option_value(global.args, "--tags")),
-      )
+      let tags = parse_tags_csv(option_value(global.args, "--tags"))
+      let skip_statuses = parse_skip_statuses(global.args)
+      let preview = if skip_statuses.length() == 0 {
+        roll_preview(row, ability, tags)
+      } else {
+        roll_preview_with_skips(row, ability, tags, skip_statuses)
+      }
       let json = Json::object({
         "command": "pc.show",
         "character": row_to_character_json(row),
@@ -824,11 +826,23 @@ fn dispatch_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let verb_or_expr = need_pos(positions, 1, "roll expression or subcommand")
   if verb_or_expr == "history" {
     roll_history(global)
+  } else if flag_present(global.args, "--preview") &&
+    option_value(global.args, "--stat") == None &&
+    !flag_present(global.args, "--scene-default") &&
+    !flag_present(global.args, "--prep") {
+    fail(
+      TrpgError::Usage(
+        "roll --preview requires character roll options",
+        Some("use `trpg roll alice --preview --stat tech --scene-default`"),
+      ),
+    )
   } else if option_value(global.args, "--stat") != None ||
+    flag_present(global.args, "--preview") ||
     flag_present(global.args, "--scene-default") ||
     flag_present(global.args, "--prep") ||
     option_value(global.args, "--grant") != None ||
-    option_value(global.args, "--grant-to") != None {
+    option_value(global.args, "--grant-to") != None ||
+    option_value(global.args, "--skip-status") != None {
     character_roll(global)
   } else {
     raw_roll(global)
@@ -963,6 +977,11 @@ fn modifier_spec_text(ability : String, amount : Int) -> String {
 ///|
 fn default_grant_name(actor : String) -> String {
   actor + " の援護"
+}
+
+///|
+fn parse_skip_statuses(args : Array[String]) -> Array[String] {
+  parse_tags_csv(option_value(args, "--skip-status"))
 }
 
 ///|
@@ -1152,6 +1171,107 @@ fn apply_granted_status(
 }
 
 ///|
+fn character_roll_preview_json(
+  actor : String,
+  preview : RollPreview,
+  bonus : Int,
+  target : Int?,
+  tags : Array[String],
+  scene_modifiers : Array[SceneModifierRow],
+  scene_target_modifier : Int,
+  scene_warning : String?,
+  skipped_statuses : Array[String],
+  grant_plan : (CharacterRow, GrantedStatusRow)?,
+) -> Json {
+  let object : Map[String, Json] = {
+    "command": Json::string("roll"),
+    "mode": Json::string("character"),
+    "preview": Json::boolean(true),
+    "actor": Json::string(actor),
+    "ability": Json::string(preview.ability),
+    "base_stat": j_int(preview.base_stat),
+    "auto_modifier_total": j_int(preview.auto_total),
+    "bonus": j_int(bonus),
+    "total_modifier": j_int(preview.base_stat + preview.auto_total + bonus),
+    "modifier_total": j_int(preview.base_stat + preview.auto_total + bonus),
+    "target": match target {
+      Some(value) => j_int(value)
+      None => Json::null()
+    },
+    "tags": Json::array(tags.map(value => Json::string(value))),
+    "sources": Json::array(preview.modifiers.map(modifier_preview_json)),
+    "skipped_sources": Json::array(
+      preview.skipped_modifiers.map(skipped_modifier_json),
+    ),
+    "scene_modifiers": Json::array(scene_modifiers.map(scene_modifier_json)),
+    "scene_target_modifier": j_int(scene_target_modifier),
+    "inventory": Json::array(
+      preview.inventory.map(value => Json::string(value)),
+    ),
+    "skip_statuses": Json::array(
+      skipped_statuses.map(value => Json::string(value)),
+    ),
+  }
+  match scene_warning {
+    Some(value) => object["scene_warning"] = Json::string(value)
+    None => ()
+  }
+  match grant_plan {
+    Some((_, granted)) => object["grant_plan"] = grant_status_json(granted)
+    None => ()
+  }
+  Json::object(object)
+}
+
+///|
+fn format_character_roll_preview(
+  actor : String,
+  preview : RollPreview,
+  bonus : Int,
+  target : Int?,
+  tags : Array[String],
+  scene_modifiers : Array[SceneModifierRow],
+  scene_target_modifier : Int,
+  skipped_statuses : Array[String],
+  grant_plan : (CharacterRow, GrantedStatusRow)?,
+) -> String {
+  let bonus_text = if bonus >= 0 {
+    "+" + bonus.to_string()
+  } else {
+    bonus.to_string()
+  }
+  let target_text = match target {
+    Some(value) => value.to_string()
+    None => "(なし)"
+  }
+  let tags_text = if tags.length() == 0 { "(なし)" } else { tags.join(",") }
+  let scene_modifier_text = if scene_modifiers.length() == 0 {
+    "(なし)"
+  } else {
+    "- " + scene_modifiers.map(format_scene_modifier).join("\n- ")
+  }
+  let skip_text = if skipped_statuses.length() == 0 {
+    "(なし)"
+  } else {
+    skipped_statuses.join(", ")
+  }
+  let grant_text = match grant_plan {
+    Some((_, granted)) => format_granted_status(granted)
+    None => "(なし)"
+  }
+  format_roll_preview(actor, preview) +
+  "\nボーナス: \{bonus_text}" +
+  "\n想定合計(能力値+自動修正+ボーナス): \{preview.base_stat + preview.auto_total + bonus}" +
+  "\ntarget: \{target_text}" +
+  "\ntags: \{tags_text}" +
+  "\n明示除外 status: \{skip_text}" +
+  "\nscene_modifiers:\n" +
+  scene_modifier_text +
+  "\nscene target 補正合計: \{scene_target_modifier}" +
+  "\ngrant_plan: \{grant_text}"
+}
+
+///|
 fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let positions = positional_args(global.args)
   let actor = need_pos(positions, 1, "actor name")
@@ -1164,6 +1284,8 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let current_scene = require_scenario_scene(scenario, session.current_scene)
   let scene_default = flag_present(global.args, "--scene-default")
   let prep = flag_present(global.args, "--prep")
+  let preview_only = flag_present(global.args, "--preview")
+  let skip_statuses = parse_skip_statuses(global.args)
   let scene_tags = if scene_default {
     scene_difficulty_tags(current_scene)
   } else {
@@ -1243,126 +1365,139 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
     Some(value) => parse_int_arg(value, "bonus")
     None => 0
   }
-  let context = option_value(global.args, "--context")
-  let resolved = actor_roll(
-    row, ability, bonus, target, tags, applied_scene_modifiers, scene_target_modifier,
-    scene_warning,
-  )
-  if !no_consume && applied_scene_modifiers.length() > 0 {
-    save_scene_modifiers(
+  let preview = roll_preview_with_skips(row, ability, tags, skip_statuses)
+  if preview_only {
+    let json = character_roll_preview_json(
+      actor, preview, bonus, target, tags, applied_scene_modifiers, scene_target_modifier,
+      scene_warning, skip_statuses, grant_plan,
+    )
+    let human = format_character_roll_preview(
+      actor, preview, bonus, target, tags, applied_scene_modifiers, scene_target_modifier,
+      skip_statuses, grant_plan,
+    )
+    json_success(json, human, global)
+  } else {
+    let context = option_value(global.args, "--context")
+    let resolved = actor_roll_with_skips(
+      row, ability, bonus, target, tags, applied_scene_modifiers, scene_target_modifier,
+      scene_warning, skip_statuses,
+    )
+    if !no_consume && applied_scene_modifiers.length() > 0 {
+      save_scene_modifiers(
+        db,
+        session.id,
+        session.current_scene,
+        remaining_scene_modifiers,
+      )
+    }
+    if !no_consume && resolved.consumed_statuses.length() > 0 {
+      let next_conditions = consume_statuses_json(
+        row.conditions_json,
+        resolved.consumed_statuses,
+      )
+      update_character_conditions(db, row.id, next_conditions)
+    }
+    let granted_status = match grant_plan {
+      Some((_, granted)) if resolved.outcome == "HIT" => {
+        let target_row = require_character(db, session.id, granted.target)
+        ignore(apply_granted_status(db, session, target_row, granted))
+        Some(granted)
+      }
+      _ => None
+    }
+    let roll_id = insert_roll_record(
       db,
       session.id,
-      session.current_scene,
-      remaining_scene_modifiers,
+      resolved.expr,
+      resolved.total,
+      resolved.rolls,
+      resolved.total_modifier,
+      target,
+      resolved.outcome,
+      Some(actor),
+      context,
     )
-  }
-  if !no_consume && resolved.consumed_statuses.length() > 0 {
-    let next_conditions = consume_statuses_json(
-      row.conditions_json,
-      resolved.consumed_statuses,
+    let event_text_base = roll_event_text(
+      actor,
+      resolved.expr,
+      resolved.total,
+      target,
+      resolved.outcome,
+      resolved.margin,
+      resolved.special,
+      applied_scene_modifiers,
+      context,
     )
-    update_character_conditions(db, row.id, next_conditions)
-  }
-  let granted_status = match grant_plan {
-    Some((_, granted)) if resolved.outcome == "HIT" => {
-      let target_row = require_character(db, session.id, granted.target)
-      ignore(apply_granted_status(db, session, target_row, granted))
-      Some(granted)
+    let event_text = event_text_base
+    let event_data : Map[String, Json] = {
+      "command": Json::string("roll"),
+      "mode": Json::string("character"),
+      "tags": Json::array(tags.map(value => Json::string(value))),
+      "roll_id": j_int(roll_id),
     }
-    _ => None
-  }
-  let roll_id = insert_roll_record(
-    db,
-    session.id,
-    resolved.expr,
-    resolved.total,
-    resolved.rolls,
-    resolved.total_modifier,
-    target,
-    resolved.outcome,
-    Some(actor),
-    context,
-  )
-  let event_text_base = roll_event_text(
-    actor,
-    resolved.expr,
-    resolved.total,
-    target,
-    resolved.outcome,
-    resolved.margin,
-    resolved.special,
-    applied_scene_modifiers,
-    context,
-  )
-  let event_text = event_text_base
-  let event_data : Map[String, Json] = {
-    "command": Json::string("roll"),
-    "mode": Json::string("character"),
-    "tags": Json::array(tags.map(value => Json::string(value))),
-    "roll_id": j_int(roll_id),
-  }
-  match actor_roll_json(resolved) {
-    Object(object) =>
-      for key, value in object {
-        event_data[key] = value
-      }
-    _ => ()
-  }
-  if applied_scene_modifiers.length() > 0 {
-    event_data["scene_target_modifier"] = j_int(scene_target_modifier)
-    event_data["scene_modifiers"] = Json::array(
-      applied_scene_modifiers.map(scene_modifier_json),
+    match actor_roll_json(resolved) {
+      Object(object) =>
+        for key, value in object {
+          event_data[key] = value
+        }
+      _ => ()
+    }
+    if applied_scene_modifiers.length() > 0 {
+      event_data["scene_target_modifier"] = j_int(scene_target_modifier)
+      event_data["scene_modifiers"] = Json::array(
+        applied_scene_modifiers.map(scene_modifier_json),
+      )
+    }
+    match granted_status {
+      Some(value) => event_data["granted_status"] = grant_status_json(value)
+      None => ()
+    }
+    let event_id = append_event(
+      db,
+      session.id,
+      "roll",
+      Some(actor),
+      Some(ability),
+      event_text,
+      Json::object(event_data).stringify(),
     )
+    let json : Map[String, Json] = {
+      "command": Json::string("roll"),
+      "mode": Json::string("character"),
+      "roll_id": j_int(roll_id),
+      "event_id": j_int(event_id),
+      "tags": Json::array(tags.map(value => Json::string(value))),
+    }
+    match actor_roll_json(resolved) {
+      Object(object) =>
+        for key, value in object {
+          json[key] = value
+        }
+      _ => ()
+    }
+    if applied_scene_modifiers.length() > 0 {
+      json["scene_target_modifier"] = j_int(scene_target_modifier)
+      json["scene_modifiers"] = Json::array(
+        applied_scene_modifiers.map(scene_modifier_json),
+      )
+    }
+    match granted_status {
+      Some(value) => json["granted_status"] = grant_status_json(value)
+      None => ()
+    }
+    match context {
+      Some(value) => json["context"] = Json::string(value)
+      None => ()
+    }
+    let human = match granted_status {
+      Some(value) =>
+        format_actor_roll(resolved) +
+        "\ngranted_status: " +
+        format_granted_status(value)
+      None => format_actor_roll(resolved)
+    }
+    json_success(Json::object(json), human, global)
   }
-  match granted_status {
-    Some(value) => event_data["granted_status"] = grant_status_json(value)
-    None => ()
-  }
-  let event_id = append_event(
-    db,
-    session.id,
-    "roll",
-    Some(actor),
-    Some(ability),
-    event_text,
-    Json::object(event_data).stringify(),
-  )
-  let json : Map[String, Json] = {
-    "command": Json::string("roll"),
-    "mode": Json::string("character"),
-    "roll_id": j_int(roll_id),
-    "event_id": j_int(event_id),
-    "tags": Json::array(tags.map(value => Json::string(value))),
-  }
-  match actor_roll_json(resolved) {
-    Object(object) =>
-      for key, value in object {
-        json[key] = value
-      }
-    _ => ()
-  }
-  if applied_scene_modifiers.length() > 0 {
-    json["scene_target_modifier"] = j_int(scene_target_modifier)
-    json["scene_modifiers"] = Json::array(
-      applied_scene_modifiers.map(scene_modifier_json),
-    )
-  }
-  match granted_status {
-    Some(value) => json["granted_status"] = grant_status_json(value)
-    None => ()
-  }
-  match context {
-    Some(value) => json["context"] = Json::string(value)
-    None => ()
-  }
-  let human = match granted_status {
-    Some(value) =>
-      format_actor_roll(resolved) +
-      "\ngranted_status: " +
-      format_granted_status(value)
-    None => format_actor_roll(resolved)
-  }
-  json_success(Json::object(json), human, global)
 }
 
 ///|
@@ -1993,6 +2128,8 @@ fn item_transfer(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let to_name = need_pos(positions, 3, "target character name")
   let item = need_pos(positions, 4, "item name")
   let note = option_value(global.args, "--note")
+  let add_tags = parse_tags_csv(option_value(global.args, "--add-tags"))
+  let set_effect = option_value(global.args, "--set-effect")
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
@@ -2002,18 +2139,35 @@ fn item_transfer(global : GlobalArgs) -> RunResult raise TrpgFailure {
     from_row.sheet_json,
     item,
   )
+  let transferred_item = update_inventory_item_json(
+    item_json, add_tags, set_effect,
+  )
   let next_to_sheet = add_existing_inventory_item_json(
     to_row.sheet_json,
-    item_json,
+    transferred_item,
   )
   update_character_sheet(db, from_row.id, next_from_sheet)
   update_character_sheet(db, to_row.id, next_to_sheet)
-  let item_name = object_name(item_json, item)
-  let item_id = json_string_field(item_json, "id", item_name)
+  let item_name = object_name(transferred_item, item)
+  let item_id = json_string_field(transferred_item, "id", item_name)
+  let update_text = if add_tags.length() == 0 && set_effect == None {
+    ""
+  } else {
+    let parts : Array[String] = []
+    if add_tags.length() > 0 {
+      let add_tags_text = add_tags.join(",")
+      parts.push("add-tags=\{add_tags_text}")
+    }
+    match set_effect {
+      Some(value) => parts.push("set-effect=\{value}")
+      None => ()
+    }
+    " / " + parts.join(" / ")
+  }
   let text = match note {
     Some(value) if !value.is_empty() =>
-      "\{from_name} -> \{to_name}: \{item_name} を移譲 / \{value}"
-    _ => "\{from_name} -> \{to_name}: \{item_name} を移譲"
+      "\{from_name} -> \{to_name}: \{item_name} を移譲\{update_text} / \{value}"
+    _ => "\{from_name} -> \{to_name}: \{item_name} を移譲\{update_text}"
   }
   let updated_from = require_character(db, session.id, from_name)
   let updated_to = require_character(db, session.id, to_name)
@@ -2030,7 +2184,12 @@ fn item_transfer(global : GlobalArgs) -> RunResult raise TrpgFailure {
       "to": Json::string(to_name),
       "item": Json::string(item_name),
       "item_id": Json::string(item_id),
-      "item_object": item_json,
+      "item_object": transferred_item,
+      "add_tags": Json::array(add_tags.map(value => Json::string(value))),
+      "set_effect": match set_effect {
+        Some(value) => Json::string(value)
+        None => Json::null()
+      },
       "from_inventory": Json::array(
         inventory_from_sheet_json(updated_from.sheet_json).map(value => {
           Json::string(value)
@@ -2050,6 +2209,7 @@ fn item_transfer(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "item": Json::string(item_name),
     "item_id": Json::string(item_id),
     "event_id": j_int(event_id),
+    "item_object": transferred_item,
     "from_inventory": Json::array(
       inventory_from_sheet_json(updated_from.sheet_json).map(value => {
         Json::string(value)
