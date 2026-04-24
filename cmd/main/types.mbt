@@ -135,6 +135,17 @@ struct SceneModifierRow {
 }
 
 ///|
+struct PlayStyleRow {
+  id : String
+  display_name : String
+  summary : String
+  impulse : String
+  risk_tolerance : String
+  cooperation_mode : String
+  idea_bias : String
+}
+
+///|
 struct ActorRollRow {
   actor : String
   ability : String

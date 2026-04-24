@@ -64,6 +64,7 @@ if trpg session init forgotten_library >/tmp/trpg-conflict.json 2>/tmp/trpg-conf
 fi
 trpg pc templates list >/tmp/trpg-pc-templates.json
 trpg pc add alice --template alice >/tmp/trpg-pc-add.json
+trpg pc style show alice >/tmp/trpg-pc-style-before.json
 trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show.json
 trpg roll alice --stat body --scene-default --context "入口の扉を押し開ける" >/tmp/trpg-roll-open.json
 trpg status alice add --name 祝福 --source gm --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume >/tmp/trpg-status.json
@@ -82,6 +83,9 @@ trpg roll history --as alice -n 5 >/tmp/trpg-roll-history.json
 trpg scene show >/tmp/trpg-scene-show.json
 trpg session goals >/tmp/trpg-session-goals-before.json
 trpg prompt player alice --brief --human >/tmp/trpg-prompt-player-before-scene.txt
+trpg pc style show alice >/tmp/trpg-pc-style-after.json
+trpg pc style reroll alice >/tmp/trpg-pc-style-reroll.json
+trpg pc style set alice supportive >/tmp/trpg-pc-style-set.json
 trpg scene next >/tmp/trpg-scene.json
 trpg pc show alice >/tmp/trpg-pc-show-after-scene.json
 trpg scene modifier add --name "蔵書の道筋" --next-roll target:-2 --stat tech --tags ancient-text --note "近い棚が見えた" >/tmp/trpg-scene-modifier-add.json
@@ -163,6 +167,26 @@ fi
 
 if grep -q 'applied_at_ms' /tmp/trpg-prompt-player-before-scene.txt; then
   echo "smoke: expected prompt player brief to humanize conditions" >&2
+  exit 1
+fi
+
+if ! grep -q 'プレイスタイル' /tmp/trpg-prompt-player-before-scene.txt; then
+  echo "smoke: expected prompt player to include play style" >&2
+  exit 1
+fi
+
+if ! grep -q '"play_style":null' /tmp/trpg-pc-style-before.json; then
+  echo "smoke: expected style to be unset before first prompt player" >&2
+  exit 1
+fi
+
+if grep -q '"play_style":null' /tmp/trpg-pc-style-after.json; then
+  echo "smoke: expected prompt player to assign play style" >&2
+  exit 1
+fi
+
+if ! grep -q '"id":"supportive"' /tmp/trpg-pc-style-set.json; then
+  echo "smoke: expected pc style set to persist explicit style" >&2
   exit 1
 fi
 

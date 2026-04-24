@@ -29,6 +29,6 @@ TRPG GM skill を使って TRPG を開始してください。
 - `margin=0` は純粋な HIT です。機械的不利は付けず、必要なら描写上の緊張感だけ残してください。
 - `margin>=3` は `special=crit` ではありませんが、副次好機 1 つを検討して構いません。
 - 終幕では `trpg session report` を確認し、必要なら `trpg session end` を実行してください。
-- player handoff では `trpg prompt player <name> --human --brief` を主情報源にしてください。必要なら末尾に `## GM補足` セクションを足し、箇条書きで選択肢候補を書いて構いません。
+- player handoff では `trpg prompt player <name> --human --brief` を主情報源にしてください。初回呼び出し時は、その PC に subagent 用 play_style がランダム割当され、session 中は永続化されます。必要なら末尾に `## GM補足` セクションを足し、箇条書きで選択肢候補を書いて構いません。
 - scenario 定義の NPC は `session init` で自動登録されます。追加 NPC が必要なときだけ手動で登録してください。
 - ユーザが即開始を明示した場合は、`party_setup.default_participants` を使ってそのまま開始して構いません。運用モード指定があればそれにも従ってください。失敗時に即 bad end / irreversible loss / goal lockout を起こしうる判定だけは一度確認してください。

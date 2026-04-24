@@ -532,12 +532,13 @@ fn dispatch_pc(global : GlobalArgs) -> RunResult raise TrpgFailure {
   match verb {
     "add" => pc_add(global)
     "show" => pc_show(global)
+    "style" => pc_style(global)
     "templates" => pc_templates(global)
     _ =>
       fail(
         TrpgError::Usage(
           "unknown pc verb: \{verb}",
-          Some("supported verbs: add, show, templates"),
+          Some("supported verbs: add, show, style, templates"),
         ),
       )
   }
@@ -615,13 +616,110 @@ fn pc_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
       json_success(json, format_roll_preview(row.name, preview), global)
     }
     None => {
+      let style_text = match play_style_from_sheet_json(row.sheet_json) {
+        Some(style) => " / style=\{style.display_name}[\{style.id}]"
+        None => ""
+      }
       let json = Json::object({
         "command": "pc.show",
         "character": row_to_character_json(row),
       })
-      json_success(json, "\{row.name}: HP \{row.hp_cur}/\{row.hp_max}", global)
+      json_success(
+        json,
+        "\{row.name}: HP \{row.hp_cur}/\{row.hp_max}\{style_text}",
+        global,
+      )
     }
   }
+}
+
+///|
+fn pc_style(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let verb = need_pos(positions, 2, "pc style verb")
+  match verb {
+    "show" => pc_style_show(global)
+    "reroll" => pc_style_reroll(global)
+    "set" => pc_style_set(global)
+    _ =>
+      fail(
+        TrpgError::Usage(
+          "unknown pc style verb: \{verb}",
+          Some("supported verbs: show, reroll, set"),
+        ),
+      )
+  }
+}
+
+///|
+fn pc_style_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let name = need_pos(positions, 3, "pc name")
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let row = require_character(db, session.id, name)
+  let style = play_style_from_sheet_json(row.sheet_json)
+  let json = Json::object({
+    "command": "pc.style.show",
+    "name": Json::string(name),
+    "play_style": match style {
+      Some(value) => play_style_json(value)
+      None => Json::null()
+    },
+  })
+  let human = match style {
+    Some(value) => "\{name}: \{format_play_style_human(value)}"
+    None => "\{name}: play_style=(未設定)"
+  }
+  json_success(json, human, global)
+}
+
+///|
+fn pc_style_set(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let name = need_pos(positions, 3, "pc name")
+  let style_id = need_pos(positions, 4, "style_id")
+  let style = require_catalog_play_style(style_id)
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let row = require_character(db, session.id, name)
+  let (updated, assigned) = assign_character_play_style(db, row, style)
+  let json = Json::object({
+    "command": "pc.style.set",
+    "character": row_to_character_json(updated),
+    "play_style": play_style_json(assigned),
+  })
+  json_success(
+    json,
+    "\{name}: style -> \{format_play_style_human(assigned)}",
+    global,
+  )
+}
+
+///|
+fn pc_style_reroll(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let name = need_pos(positions, 3, "pc name")
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let row = require_character(db, session.id, name)
+  let next_style = rerolled_play_style(
+    play_style_from_sheet_json(row.sheet_json),
+  )
+  let (updated, assigned) = assign_character_play_style(db, row, next_style)
+  let json = Json::object({
+    "command": "pc.style.reroll",
+    "character": row_to_character_json(updated),
+    "play_style": play_style_json(assigned),
+  })
+  json_success(
+    json,
+    "\{name}: style reroll -> \{format_play_style_human(assigned)}",
+    global,
+  )
 }
 
 ///|

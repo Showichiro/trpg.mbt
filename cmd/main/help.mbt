@@ -17,6 +17,11 @@ fn command_help_key(args : Array[String]) -> String? {
       }
     Some("pc") =>
       match args.get(1) {
+        Some("style") =>
+          match args.get(2) {
+            Some(verb) => Some("pc.style." + verb)
+            None => None
+          }
         Some("templates") =>
           match args.get(2) {
             Some(verb) => Some("pc.templates." + verb)

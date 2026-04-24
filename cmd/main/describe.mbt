@@ -36,6 +36,15 @@ fn describe_commands_json() -> Json {
       "pc.show": command_descriptor(
         "PC/NPC を表示する", "trpg pc show <name> [--for-roll body|tech|mind] [--tags lockpick,ritual]",
       ),
+      "pc.style.show": command_descriptor(
+        "PC の play style を表示する", "trpg pc style show <name>",
+      ),
+      "pc.style.reroll": command_descriptor(
+        "PC の play style をランダム再抽選する", "trpg pc style reroll <name>",
+      ),
+      "pc.style.set": command_descriptor(
+        "PC の play style を明示設定する", "trpg pc style set <name> <style_id>",
+      ),
       "pc.templates.list": command_descriptor(
         "利用可能な PC template を表示する", "trpg pc templates list",
       ),
@@ -119,7 +128,7 @@ fn describe_commands_json() -> Json {
         "GM 用プロンプトを合成する", "trpg prompt gm [--brief] [--human]",
       ),
       "prompt.player": command_descriptor(
-        "Player 用プロンプトを合成する", "trpg prompt player <name> [--brief] [--human]",
+        "Player 用プロンプトを合成する", "trpg prompt player <name> [--brief] [--human]  # 初回実行時に play_style をランダム割当して session に保存",
       ),
       "prompt.rules": command_descriptor(
         "ルール要約を出力する", "trpg prompt rules [--human]",

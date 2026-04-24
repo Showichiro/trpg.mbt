@@ -35,6 +35,8 @@ type ModifierPreviewRow
 
 type ModifierResolution
 
+type PlayStyleRow
+
 type RollEval
 
 type RollPreview

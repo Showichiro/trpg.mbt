@@ -540,7 +540,7 @@ fn row_to_character_json(row : CharacterRow) -> Json {
   let conditions = parse_json(row.conditions_json, "conditions_json") catch {
     _ => Json::array([])
   }
-  Json::object({
+  let object : Map[String, Json] = {
     "id": j_int(row.id),
     "name": Json::string(row.name),
     "kind": Json::string(row.kind),
@@ -548,7 +548,15 @@ fn row_to_character_json(row : CharacterRow) -> Json {
     "hp_max": j_int(row.hp_max),
     "conditions": conditions,
     "sheet": sheet,
-  })
+  }
+  let play_style = play_style_from_sheet_json(row.sheet_json) catch {
+    _ => None
+  }
+  match play_style {
+    Some(style) => object["play_style"] = play_style_json(style)
+    None => object["play_style"] = Json::null()
+  }
+  Json::object(object)
 }
 
 ///|

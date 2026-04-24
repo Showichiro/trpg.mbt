@@ -70,7 +70,8 @@ fn prompt_player(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let db = open_db()
   defer db.close()
   let session = require_active_session(db)
-  let row = require_character(db, session.id, name)
+  let base_row = require_character(db, session.id, name)
+  let (row, style) = ensure_character_play_style(db, base_row)
   let scenario = load_scenario_json(session.scenario_id)
   let characters = list_characters(db, session.id)
   let brief = flag_present(global.args, "--brief")
@@ -82,6 +83,9 @@ fn prompt_player(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "## セッション\n" +
     "現在シーン: \{session.current_scene}\n" +
     current_scene_description(scenario, session.current_scene) +
+    "\n\n" +
+    "## プレイスタイル\n" +
+    format_play_style_prompt(style, brief) +
     "\n\n" +
     "## PC\n" +
     format_player_character_prompt(row, brief) +
@@ -95,6 +99,7 @@ fn prompt_player(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "command": "prompt.player",
     "name": Json::string(name),
     "brief": Json::boolean(brief),
+    "play_style": play_style_json(style),
     "text": Json::string(prompt),
   })
   output_success(
