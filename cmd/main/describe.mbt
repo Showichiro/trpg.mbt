@@ -40,7 +40,7 @@ fn describe_commands_json() -> Json {
         "利用可能な PC template を表示する", "trpg pc templates list",
       ),
       "roll": command_descriptor(
-        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--bonus N] [--target N|--scene-default|--prep] [--tags tag1,tag2] [--grant-to <name> --grant <ability:+N@tag1,tag2> [--grant-name <status_name>]] [--context text]",
+        "ダイスを振る", "trpg roll <expr> [--target N] [--as name] [--context text] | trpg roll <name> --stat <body|tech|mind> [--bonus N] [--target N|--scene-default|--prep] [--tags tag1,tag2] [--grant-to <name> --grant <ability:+N@tag1,tag2> [--grant-name <status_name>]] [--context text]  # --prep は target 未指定時に scene target-2、無ければ 9",
       ),
       "roll.history": command_descriptor(
         "判定履歴を表示する", "trpg roll history [--as name] [-n N]",
@@ -90,6 +90,9 @@ fn describe_commands_json() -> Json {
       "scene.flag": command_descriptor(
         "現在シーンのフラグを設定する (goal 条件の進行に使う)",
         "trpg scene flag <key> <value>",
+      ),
+      "scene.progress": command_descriptor(
+        "現在シーンの進捗カウンタを増減する", "trpg scene progress <key> <delta> [--note text]",
       ),
       "scenario.show": command_descriptor(
         "シナリオ定義を表示する", "trpg scenario show <scenario_id>",

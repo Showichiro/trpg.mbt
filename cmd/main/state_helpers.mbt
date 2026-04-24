@@ -517,6 +517,28 @@ fn consume_statuses_json(
 }
 
 ///|
+fn expire_scene_duration_conditions(
+  source : String,
+) -> (String, Array[String]) raise TrpgFailure {
+  let conditions = match parse_json(source, "conditions_json") {
+    Array(items) => items
+    _ => []
+  }
+  let kept : Array[Json] = []
+  let expired : Array[String] = []
+  for condition in conditions {
+    let duration = json_string_field(condition, "duration", "")
+    let name = json_string_field(condition, "name", "status")
+    if duration == "scene" {
+      expired.push(name)
+    } else {
+      kept.push(condition)
+    }
+  }
+  (Json::array(kept).stringify(), expired)
+}
+
+///|
 fn effect_json(
   ability : String,
   amount : Int,
@@ -678,6 +700,80 @@ fn actor_roll(
     skipped_modifiers: preview.skipped_modifiers,
     consumed_statuses,
     scene_warning,
+  }
+}
+
+///|
+fn format_effect_compact(effect : Json) -> String raise TrpgFailure {
+  let ability = effect_stat_name(
+    effect,
+    normalize_ability(json_string_field(effect, "stat", "body")),
+  )
+  let amount = json_int_field(effect, "amount", 0)
+  let amount_text = if amount >= 0 {
+    "+" + amount.to_string()
+  } else {
+    amount.to_string()
+  }
+  let tags = effect_tags(effect)
+  let tags_text = if tags.length() == 0 { "" } else { " @ " + tags.join(",") }
+  ability + amount_text + tags_text
+}
+
+///|
+fn condition_effects(condition : Json) -> Array[Json] raise TrpgFailure {
+  let effects = json_array_field(condition, "effects")
+  if effects.length() > 0 {
+    effects
+  } else {
+    match legacy_status_effect(condition) {
+      Some(effect) => [effect]
+      None => []
+    }
+  }
+}
+
+///|
+fn format_condition_human(condition : Json) -> String raise TrpgFailure {
+  let name = json_string_field(condition, "name", "status")
+  let details : Array[String] = []
+  let effects = condition_effects(condition)
+  if effects.length() > 0 {
+    details.push(effects.map(format_effect_compact).join(" / "))
+  }
+  match json_string_opt_field(condition, "source") {
+    Some(value) if !value.is_empty() => details.push("from " + value)
+    _ => ()
+  }
+  match json_int_opt_field(condition, "uses") {
+    Some(value) => details.push("uses=\{value}")
+    None => ()
+  }
+  match json_string_opt_field(condition, "duration") {
+    Some(value) if !value.is_empty() => details.push("duration=\{value}")
+    _ => ()
+  }
+  let note = json_string_field(condition, "note", "")
+  if !note.is_empty() && effects.length() == 0 {
+    details.push(note)
+  }
+  if details.length() == 0 {
+    name
+  } else {
+    name + " (" + details.join(", ") + ")"
+  }
+}
+
+///|
+fn format_conditions_human(source : String) -> String raise TrpgFailure {
+  let conditions = match parse_json(source, "conditions_json") {
+    Array(items) => items
+    _ => []
+  }
+  if conditions.length() == 0 {
+    "(なし)"
+  } else {
+    conditions.map(format_condition_human).join("; ")
   }
 }
 

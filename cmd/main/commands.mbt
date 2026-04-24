@@ -353,6 +353,7 @@ fn set_session_scene(
   let scenario = load_scenario_json(session.scenario_id)
   let scene = require_scenario_scene(scenario, key)
   let desc = json_string_field(scene, "description", "")
+  let expired_rows = expire_scene_duration_statuses(db, session)
   let scene_data : Map[String, Json] = {
     "scene": Json::string(key),
     "description": Json::string(desc),
@@ -387,15 +388,69 @@ fn set_session_scene(
     "event_id": j_int(event_id),
     "scene": scene,
   }
+  if expired_rows.length() > 0 {
+    json["expired_statuses"] = Json::array(
+      expired_rows.map(entry => {
+        Json::object({
+          "name": Json::string(entry.0),
+          "statuses": Json::array(entry.1.map(value => Json::string(value))),
+        })
+      }),
+    )
+  }
   match note {
     Some(text) if !text.is_empty() => json["note"] = Json::string(text)
     _ => ()
   }
-  let human = match note {
+  let human_base = match note {
     Some(text) if !text.is_empty() => "scene -> \{key} / \{text}\n\{desc}"
     _ => "scene -> \{key}\n\{desc}"
   }
+  let human = if expired_rows.length() == 0 {
+    human_base
+  } else {
+    human_base +
+    "\nexpired_statuses: " +
+    expired_rows.map(entry => entry.0 + "=" + entry.1.join(", ")).join("; ")
+  }
   json_success(Json::object(json), human, global)
+}
+
+///|
+fn expire_scene_duration_statuses(
+  db : @sqlite.Database,
+  session : SessionRow,
+) -> Array[(String, Array[String])] raise TrpgFailure {
+  let expired_rows : Array[(String, Array[String])] = []
+  for row in list_characters(db, session.id) {
+    let (next_conditions, expired_names) = expire_scene_duration_conditions(
+      row.conditions_json,
+    )
+    if expired_names.length() > 0 {
+      update_character_conditions(db, row.id, next_conditions)
+      ignore(
+        append_event(
+          db,
+          session.id,
+          "status",
+          Some("gm"),
+          Some(row.name),
+          "\{row.name}: status expire " +
+          expired_names.join(", ") +
+          " / scene_end",
+          Json::object({
+            "operation": Json::string("expire"),
+            "reason": Json::string("scene_end"),
+            "status_names": Json::array(
+              expired_names.map(value => Json::string(value)),
+            ),
+          }).stringify(),
+        ),
+      )
+      expired_rows.push((row.name, expired_names))
+    }
+  }
+  expired_rows
 }
 
 ///|
@@ -975,15 +1030,7 @@ fn character_roll(global : GlobalArgs) -> RunResult raise TrpgFailure {
     Some(value) => Some(parse_int_arg(value, "target"))
     None =>
       if prep {
-        Some(
-          prep_target(
-            if scene_default {
-              scene_difficulty_target(current_scene)
-            } else {
-              None
-            },
-          ),
-        )
+        Some(prep_target(scene_difficulty_target(current_scene)))
       } else if scene_default {
         scene_difficulty_target(current_scene)
       } else {
@@ -1782,11 +1829,12 @@ fn dispatch_scene(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "show" => scene_show(global)
     "next" => scene_next(global)
     "flag" => scene_flag(global)
+    "progress" => scene_progress(global)
     _ =>
       fail(
         TrpgError::Usage(
           "unknown scene verb: \{verb}",
-          Some("supported verbs: set, list, show, next, flag"),
+          Some("supported verbs: set, list, show, next, flag, progress"),
         ),
       )
   }
@@ -1853,6 +1901,60 @@ fn scene_flag(global : GlobalArgs) -> RunResult raise TrpgFailure {
 }
 
 ///|
+fn scene_progress(global : GlobalArgs) -> RunResult raise TrpgFailure {
+  let positions = positional_args(global.args)
+  let progress_key = need_pos(positions, 2, "progress key")
+  let delta = parse_int_arg(
+    need_pos(positions, 3, "progress delta"),
+    "progress delta",
+  )
+  let note = option_value(global.args, "--note")
+  let db = open_db()
+  defer db.close()
+  let session = require_active_session(db)
+  let current = load_scene_progress(db, session.id, session.current_scene)
+  let next_value = match current.get(progress_key) {
+    Some(value) => value + delta
+    None => delta
+  }
+  current[progress_key] = next_value
+  save_scene_progress(db, session.id, session.current_scene, current)
+  let text = match note {
+    Some(value) if !value.is_empty() =>
+      "progress[\{session.current_scene}] \{progress_key} += \{delta} -> \{next_value} / \{value}"
+    _ =>
+      "progress[\{session.current_scene}] \{progress_key} += \{delta} -> \{next_value}"
+  }
+  let event_id = append_event(
+    db,
+    session.id,
+    "scene",
+    Some("gm"),
+    Some(session.current_scene),
+    text,
+    Json::object({
+      "operation": Json::string("progress"),
+      "key": Json::string(progress_key),
+      "delta": j_int(delta),
+      "value": j_int(next_value),
+      "note": match note {
+        Some(value) => Json::string(value)
+        None => Json::null()
+      },
+    }).stringify(),
+  )
+  let json = Json::object({
+    "command": "scene.progress",
+    "scene": Json::string(session.current_scene),
+    "key": Json::string(progress_key),
+    "delta": j_int(delta),
+    "value": j_int(next_value),
+    "event_id": j_int(event_id),
+  })
+  output_success({ json, human: text, stderr: text }, global)
+}
+
+///|
 fn scene_list(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let db = open_db()
   defer db.close()
@@ -1901,6 +2003,7 @@ fn scene_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let key = positions.get(2).unwrap_or(session.current_scene)
   let scene = require_scenario_scene(scenario, key)
   let flags = load_scene_flags(db, session.id, key)
+  let progress = load_scene_progress(db, session.id, key)
   let transitions = if key == session.current_scene {
     available_scene_transitions(db, session, scenario)
   } else {
@@ -1919,16 +2022,34 @@ fn scene_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
   } else {
     transitions.map(format_scene_transition).join("\n")
   }
+  let progress_text = if progress.is_empty() {
+    "(なし)"
+  } else {
+    progress
+    .iter()
+    .map(fn(kv) {
+      let (k, v) = kv
+      "- \{k}: \{v}"
+    })
+    .join("\n")
+  }
   let human = "scene: \{key}\n" +
     json_string_field(scene, "description", "") +
-    "\n難易度: \{difficulty_text}\n遷移:\n" +
+    "\n難易度: \{difficulty_text}\n進捗:\n" +
+    progress_text +
+    "\n遷移:\n" +
     transitions_text
+  let progress_json : Map[String, Json] = {}
+  for k, v in progress {
+    progress_json[k] = j_int(v)
+  }
   let json = Json::object({
     "command": "scene.show",
     "key": Json::string(key),
     "current": Json::boolean(key == session.current_scene),
     "scene": scene,
     "flags": Json::object(flags),
+    "progress": Json::object(progress_json),
     "available_transitions": Json::array(transitions),
   })
   output_success({ json, human, stderr: "scene.show: \{key}" }, global)
@@ -1987,6 +2108,65 @@ fn load_scene_flags(
   }
   finish_statement(stmt)
   flags
+}
+
+///|
+fn load_scene_progress(
+  db : @sqlite.Database,
+  session_id : Int,
+  scene_key : String,
+) -> Map[String, Int] raise TrpgFailure {
+  let stmt = prepare(
+    db, "SELECT state_json FROM scenes WHERE session_id = ? AND key = ? LIMIT 1",
+  )
+  stmt.bind_all([int_value(session_id), text_value(scene_key)]) |> ignore
+  let progress = if stmt.step() {
+    match parse_json(bytes_to_string(stmt.column_text(0)), "state_json") {
+      Object(object) => {
+        let progress_object = match object.get("progress") {
+          Some(Object(progress_map)) => progress_map
+          _ => {}
+        }
+        let out : Map[String, Int] = {}
+        for key, value in progress_object {
+          match value {
+            Number(number, ..) => out[key] = number.to_int()
+            _ => ()
+          }
+        }
+        out
+      }
+      _ => {}
+    }
+  } else {
+    {}
+  }
+  finish_statement(stmt)
+  progress
+}
+
+///|
+fn save_scene_progress(
+  db : @sqlite.Database,
+  session_id : Int,
+  scene_key : String,
+  progress : Map[String, Int],
+) -> Unit raise TrpgFailure {
+  let progress_json : Map[String, Json] = {}
+  for k, v in progress {
+    progress_json[k] = j_int(v)
+  }
+  execute_bound(
+    db,
+    "UPDATE scenes SET state_json = ? WHERE session_id = ? AND key = ?",
+    [
+      text_value(
+        Json::object({ "progress": Json::object(progress_json) }).stringify(),
+      ),
+      int_value(session_id),
+      text_value(scene_key),
+    ],
+  )
 }
 
 ///|
@@ -2145,6 +2325,12 @@ fn format_scenario_goals(scenario : Json) -> String {
         let scene_key = json_string_field(goal, "scene", "")
         let flag = json_string_field(goal, "flag", "")
         "scene_flag(\{scene_key}.\{flag})"
+      }
+      "scene_progress_at_least" => {
+        let scene_key = json_string_field(goal, "scene", "")
+        let progress_key = json_string_field(goal, "key", "")
+        let expected = json_int_field(goal, "value", 0)
+        "scene_progress_at_least(\{scene_key}.\{progress_key} >= \{expected})"
       }
       _ => kind
     }

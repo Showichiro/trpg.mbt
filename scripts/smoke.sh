@@ -23,7 +23,8 @@ trpg pc add alice --template alice >/tmp/trpg-pc-add.json
 trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show.json
 trpg roll alice --stat body --scene-default --context "入口の扉を押し開ける" >/tmp/trpg-roll-open.json
 trpg status alice add --name 祝福 --source gm --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume >/tmp/trpg-status.json
-trpg roll alice --prep --scene-default --stat tech --bonus 12 --grant-to alice --grant tech:+1@forced-entry --grant-name 足場援護 --context "足場を整える" >/tmp/trpg-roll-prep.json
+trpg status alice add --name 動揺 --modifier body:-1 --tags forced-entry,ruins --duration scene >/tmp/trpg-status-scene.json
+trpg roll alice --prep --stat tech --tags forced-entry --bonus 12 --grant-to alice --grant tech:+1@forced-entry --grant-name 足場援護 --context "足場を整える" >/tmp/trpg-roll-prep.json
 trpg pc show alice --for-roll tech --tags forced-entry >/tmp/trpg-pc-show-after-prep.json
 trpg roll alice --stat tech --tags forced-entry --target 10 --context "扉の解錠" >/tmp/trpg-roll.json
 trpg roll alice --stat mind --target 9 --tags ritual,seal --context "譜面を読み替えて補助線を探る" >/tmp/trpg-roll-alt-target.json
@@ -35,7 +36,9 @@ trpg log show --kind roll -n 5 >/tmp/trpg-log-show.json
 trpg roll history --as alice -n 5 >/tmp/trpg-roll-history.json
 trpg scene show >/tmp/trpg-scene-show.json
 trpg session goals >/tmp/trpg-session-goals-before.json
+trpg prompt player alice --brief --human >/tmp/trpg-prompt-player-before-scene.txt
 trpg scene next >/tmp/trpg-scene.json
+trpg pc show alice >/tmp/trpg-pc-show-after-scene.json
 trpg roll alice --scene-default --stat tech --tags ancient-text --context "蔵書の間で搦め手に記録を探る" >/tmp/trpg-roll-scene-default-override.json
 trpg contest alice "司書の亡霊" --a-stat tech --b-stat mind --a-tags ancient-text --b-tags ancient-text --context "貸出記録を読み解く" >/tmp/trpg-contest.json
 trpg prompt gm --brief >/tmp/trpg-prompt-gm-brief.json
@@ -55,6 +58,21 @@ fi
 
 if trpg status alice add 失敗例 --modifier tech:+1 >/tmp/trpg-bad-status.json 2>/tmp/trpg-bad-status.err; then
   echo "smoke: expected positional status add name to fail" >&2
+  exit 1
+fi
+
+if ! grep -q '"target":7' /tmp/trpg-roll-prep.json; then
+  echo "smoke: expected --prep to use target 7 at entrance" >&2
+  exit 1
+fi
+
+if grep -q 'applied_at_ms' /tmp/trpg-prompt-player-before-scene.txt; then
+  echo "smoke: expected prompt player brief to humanize conditions" >&2
+  exit 1
+fi
+
+if grep -q '動揺' /tmp/trpg-pc-show-after-scene.json; then
+  echo "smoke: expected duration=scene status to expire on scene transition" >&2
   exit 1
 fi
 

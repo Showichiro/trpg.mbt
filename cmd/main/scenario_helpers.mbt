@@ -263,6 +263,24 @@ fn condition_satisfied(
         }
       }
     }
+    "scene_progress_at_least" => {
+      let scene_key = json_string_field(
+        condition,
+        "scene",
+        session.current_scene,
+      )
+      let progress_key = json_string_field(condition, "key", "")
+      let expected = json_int_field(condition, "value", 0)
+      if progress_key.is_empty() {
+        false
+      } else {
+        let progress = load_scene_progress(db, session.id, scene_key)
+        match progress.get(progress_key) {
+          Some(value) => value >= expected
+          None => false
+        }
+      }
+    }
     _ => false
   }
 }
@@ -291,6 +309,12 @@ fn goal_statuses(
         let scene_key = json_string_field(goal, "scene", "")
         let flag = json_string_field(goal, "flag", "")
         "scene_flag(\{scene_key}.\{flag})"
+      }
+      "scene_progress_at_least" => {
+        let scene_key = json_string_field(goal, "scene", "")
+        let progress_key = json_string_field(goal, "key", "")
+        let expected = json_int_field(goal, "value", 0)
+        "scene_progress_at_least(\{scene_key}.\{progress_key} >= \{expected})"
       }
       other => other
     }

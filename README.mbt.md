@@ -36,6 +36,7 @@ trpg scene show
 trpg roll alice --stat tech --scene-default --tags forced-entry --context "重い扉の解錠"
 trpg roll orion --prep --scene-default --stat mind --grant-to alice --grant tech:+1@ritual,seal --context "封印の手順を譜面に落とし込む"
 trpg status alice add --name 祝福 --source orion --note "次の解錠判定 +1 / scene / consume" --modifier tech:+1 --tags forced-entry,ritual --uses 1 --on-trigger consume
+trpg scene progress entrance-door +1 --note "蝶番が少し緩んだ"
 trpg item give alice "銀の鍵" --desc "封印石棺の鍵"
 trpg contest alice "司書の亡霊" --a-stat tech --b-stat mind --context "鍵の所在を探る"
 trpg attack "司書の亡霊" alice --atk mind --def tech --damage 1d6 --context "怨念の奔流"
@@ -53,7 +54,7 @@ trpg session end
 
 stdout はデフォルトで JSON、stderr は人間向けの短い説明です。`--human` を付けると stdout も人間向けになります。
 
-`trpg roll <name> --stat ...` は PC/NPC の能力値、trait、inventory item、structured status を自動合算します。`base_stat` も加算対象です。`--scene-default` を付けると現在シーンの `difficulty` を既定値として使い、`--stat` 併用時は target/tags を scene から流用したまま stat だけ差し替えます。`--prep` は準備・援護向けの sugar で、target 未指定時に scene target を 2 下げ、scene target が無ければ 9 を使います。
+`trpg roll <name> --stat ...` は PC/NPC の能力値、trait、inventory item、structured status を自動合算します。`base_stat` も加算対象です。`--scene-default` を付けると現在シーンの `difficulty` を既定値として使い、`--stat` 併用時は target/tags を scene から流用したまま stat だけ差し替えます。`--prep` は準備・援護向けの sugar で、target 未指定時に現在 scene の target を 2 下げ、scene target が無ければ 9 を使います。
 
 trait / item / status の auto-apply は `effect.stat == --stat` かつ tag 一致が条件です。tag が一致していても stat が違えば乗りません。そういう候補は `skipped_sources` に理由付きで出ます。
 
@@ -70,6 +71,10 @@ scene default を使う搦め手では `trpg roll orion --scene-default --stat t
 `trpg session goals` は現在の goal 達成状況を軽量に確認します。`scene_flag(...)` 条件を持つ goal を運用するときは、`trpg scene flag` とセットで使ってください。`inventory_ever_contained(...)` は「一度でも保持した」を sticky に評価する goal です。flag 更新後は `trpg prompt gm --human` を取り直すと文脈が揃います。
 
 `trpg scene set <key>` は互換 alias として残していますが、新規運用では `trpg scene list|show|next` と `trpg session scene <key> [--note text]` を使ってください。
+
+段階的チャレンジや repeated near miss は `trpg scene progress <key> <delta> [--note text]` で積み上げられます。`scene flag` は bool/string の節目、`scene progress` は段階的な蓄積向けです。
+
+`duration=scene` の status は scene 遷移時に自動で消えます。シーン跨ぎで残したい効果だけ別 duration を使ってください。
 
 `trpg pc show <name> --for-roll <body|tech|mind> --tags ...` は、実際の `roll` と同じ自動合算プレビューを返します。
 

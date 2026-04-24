@@ -32,6 +32,26 @@ test "modifier-with-tags spec parses support shorthand" {
 }
 
 ///|
+test "scene duration conditions expire on transition" {
+  let source = "[{\"name\":\"動揺\",\"duration\":\"scene\",\"effects\":[{\"stat\":\"body\",\"amount\":-1,\"tags\":[\"forced-entry\"],\"trigger\":\"roll\"}]},{\"name\":\"祝福\",\"uses\":1,\"effects\":[{\"stat\":\"tech\",\"amount\":1,\"tags\":[\"seal\"],\"trigger\":\"roll\"}]}]"
+  let (next_conditions, expired) = expire_scene_duration_conditions(source)
+  inspect(expired, content="[\"動揺\"]")
+  inspect(
+    format_conditions_human(next_conditions),
+    content="祝福 (tech+1 @ seal, uses=1)",
+  )
+}
+
+///|
+test "humanized conditions include source and tags" {
+  let source = "[{\"name\":\"斜光援護\",\"source\":\"orion\",\"uses\":1,\"effects\":[{\"stat\":\"tech\",\"amount\":1,\"tags\":[\"ritual\",\"seal\"],\"trigger\":\"roll\"}]},{\"name\":\"動揺\",\"note\":\"足がすくむ\"}]"
+  inspect(
+    format_conditions_human(source),
+    content="斜光援護 (tech+1 @ ritual,seal, from orion, uses=1); 動揺 (足がすくむ)",
+  )
+}
+
+///|
 test "roll preview sums only matching structured modifiers" {
   let row : CharacterRow = {
     id: 1,
