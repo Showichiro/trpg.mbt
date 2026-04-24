@@ -2892,6 +2892,7 @@ fn scenario_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let title = json_string_field(scenario, "title", scenario_id)
   let summary = json_string_field(scenario, "summary", "")
   let opening = json_string_field(scenario, "opening_scene", "entrance")
+  let interaction_mode = scenario_interaction_mode(scenario)
   let version = json_string_opt_field(scenario, "version")
   let scene_lines = format_scenario_scenes(scenario)
   let npc_lines = format_scenario_npcs(scenario)
@@ -2902,6 +2903,7 @@ fn scenario_show(global : GlobalArgs) -> RunResult raise TrpgFailure {
     "概要: \{summary}\n" +
     "path: \{installed.path}\n" +
     "origin: \{installed.origin}\n" +
+    "interaction_mode: \{format_interaction_mode(interaction_mode)}\n" +
     (match version {
       Some(value) if !value.is_empty() => "version: \{value}\n"
       _ => ""

@@ -167,6 +167,7 @@ fn scenario_install_row(
     version: json_string_opt_field(scenario, "version"),
     path,
     origin: scenario_origin(meta),
+    interaction_mode: scenario_interaction_mode(scenario),
     source_url: scenario_source_url(meta),
     installed_at_ms: scenario_installed_at_ms(meta),
   }
@@ -180,6 +181,7 @@ fn scenario_install_row_json(row : ScenarioInstallRow) -> Json {
     "summary": Json::string(row.summary),
     "path": Json::string(row.path),
     "origin": Json::string(row.origin),
+    "interaction_mode": Json::string(row.interaction_mode),
   }
   match row.version {
     Some(value) => object["version"] = Json::string(value)
@@ -204,6 +206,7 @@ fn format_scenario_install_row(row : ScenarioInstallRow) -> String {
   }
   parts.push("  path: \{row.path}")
   parts.push("  origin: \{row.origin}")
+  parts.push("  interaction_mode: \{row.interaction_mode}")
   match row.version {
     Some(value) if !value.is_empty() => parts.push("  version: \{value}")
     _ => ()

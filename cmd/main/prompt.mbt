@@ -76,6 +76,7 @@ fn prompt_player(global : GlobalArgs) -> RunResult raise TrpgFailure {
   let base_row = require_character(db, session.id, name)
   let (row, style) = ensure_character_play_style(db, base_row)
   let scenario = load_scenario_json(session.scenario_id)
+  let interaction_mode = scenario_interaction_mode(scenario)
   let characters = list_characters(db, session.id)
   let brief = flag_present(global.args, "--brief")
   let history_limit = if brief { 5 } else { 12 }
@@ -90,8 +91,22 @@ fn prompt_player(global : GlobalArgs) -> RunResult raise TrpgFailure {
     characters,
     history,
     brief,
+    interaction_mode,
+    "inspection",
   )
-  let handoff_prompt = compose_player_prompt(
+  let public_handoff_prompt = compose_player_prompt(
+    session,
+    scenario,
+    row,
+    style,
+    None,
+    characters,
+    history,
+    brief,
+    interaction_mode,
+    "public",
+  )
+  let private_handoff_prompt = compose_player_prompt(
     session,
     scenario,
     row,
@@ -100,14 +115,19 @@ fn prompt_player(global : GlobalArgs) -> RunResult raise TrpgFailure {
     characters,
     history,
     brief,
+    interaction_mode,
+    "private",
   )
   let json = Json::object({
     "command": "prompt.player",
     "name": Json::string(name),
     "brief": Json::boolean(brief),
+    "interaction_mode": Json::string(interaction_mode),
     "play_style": play_style_json(style),
     "text": Json::string(inspection_prompt),
-    "handoff_text": Json::string(handoff_prompt),
+    "public_handoff_text": Json::string(public_handoff_prompt),
+    "private_handoff_text": Json::string(private_handoff_prompt),
+    "handoff_text": Json::string(private_handoff_prompt),
   })
   output_success(
     {
@@ -129,6 +149,8 @@ fn compose_player_prompt(
   characters : Array[CharacterRow],
   history : Array[HistoryEntry],
   brief : Bool,
+  interaction_mode : String,
+  response_visibility : String,
 ) -> String {
   let intro = "あなたは TRPG セッションのプレイヤーです。\n\n" +
     "与えられた PC を演じ、1 ターンに 1 つだけ自然な日本語で行動宣言してください。\n" +
@@ -141,7 +163,11 @@ fn compose_player_prompt(
   runtime_text +
   "## セッション\n" +
   "現在シーン: \{session.current_scene}\n" +
+  "interaction_mode: \{format_interaction_mode(interaction_mode)}\n" +
   current_scene_description(scenario, session.current_scene) +
+  "\n\n" +
+  "## 応答方針\n" +
+  format_player_response_contract(interaction_mode, response_visibility) +
   "\n\n" +
   "## プレイスタイル\n" +
   format_play_style_prompt(style, brief) +
@@ -154,6 +180,34 @@ fn compose_player_prompt(
   "\n\n" +
   "## 直近履歴\n" +
   format_history_for_prompt(history)
+}
+
+///|
+fn format_player_response_contract(
+  interaction_mode : String,
+  response_visibility : String,
+) -> String {
+  match interaction_mode {
+    "mixed_interest" =>
+      match response_visibility {
+        "private" =>
+          "このシナリオは半協力で、PC 同士の利害が一致しない場面がある。\n" +
+          "返答は必ず次の 2 節で分ける。\n" +
+          "## 公開行動\n" +
+          "- 卓上で見える発言、動作、提案だけを書く。\n" +
+          "## 非公開意図\n" +
+          "- 本当の狙い、温存したい交渉材料、誰に何を隠したいかを書く。\n" +
+          "GM は mixed_interest では公開行動だけを卓上に返し、非公開意図は他プレイヤーへ流さない。"
+        "public" =>
+          "このシナリオは半協力で、PC 同士の利害が一致しない場面がある。\n" +
+          "返答は公開行動だけに絞る。卓上で見える発言、動作、提案だけを書き、秘密の狙いや本音は書かない。"
+        _ =>
+          "このシナリオは半協力で、PC 同士の利害が一致しない場面がある。\n" +
+          "卓上に出してよいのは公開行動だけで、秘密の狙いや交渉材料は他プレイヤーに見せない。"
+      }
+    _ =>
+      "通常の協力型セッションとして振る舞う。行動宣言は自然な日本語で 1 つだけ返し、必要なら GM に判定タイプや tag 候補を提案してよい。"
+  }
 }
 
 ///|
@@ -179,6 +233,9 @@ fn compose_gm_prompt(
   "\n" +
   "概要: " +
   summary +
+  "\n" +
+  "interaction_mode: " +
+  format_interaction_mode(scenario_interaction_mode(scenario)) +
   "\n" +
   "現在シーン: " +
   session.current_scene +
@@ -210,7 +267,9 @@ fn compose_gm_prompt(
   "- アイテム獲得・喪失は `trpg item give/drop 名前 アイテム名 [--note \"理由\"]`、受け渡しは `trpg item transfer A B アイテム名 [--add-tags ritual,seal] [--set-effect mind:+1] [--note \"理由\"]` を使う。新規取得は give、受け渡しは transfer、消耗・破棄は drop を使う。\n" +
   "- NPC の対抗判定は `trpg contest`、攻撃は `trpg attack` を使う。\n" +
   "- player subagent の返答を卓上に戻すときは、まず意図・しぐさ・短い台詞を拾って 1〜3 段落の物語文に再表現し、その後に必要なら 1 行だけ `判定: ...` を添える。`X の行動:` だけで平板に潰さない。\n" +
+  "- ただし `interaction_mode=mixed_interest` のシナリオでは、subagent の非公開意図を卓上に流さない。再表現してよいのは口に出した台詞、観測できる動き、その場で見える態度だけで、本当の狙い、温存したい交渉材料、誰を出し抜きたいかは伏せる。\n" +
   "- ユーザ向けの候補提示は、世界内の選択肢として 2〜3 個だけ書く。`scene 遷移`、`tag`、`grant`、`status`、`判定回避` など内部処理用語は見せない。\n" +
+  "- `interaction_mode=mixed_interest` では `## GM補足` にも秘密情報や内部意図を書かない。公開してよい選択肢だけを世界内表現で添える。\n" +
   "- 描写の最後に、次に行動する相手を明示して「あなたの番です」と振る。"
 }
 

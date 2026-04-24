@@ -1,0 +1,181 @@
+{
+  "id": "midnight_auction",
+  "title": "真夜中の遺言競売",
+  "summary": "豪商の遺産を巡る秘密競売。PC たちは同じ会場で協力して混乱を抑える必要があるが、誰に遺産を渡すかでは利害がぶつかる。",
+  "interaction_mode": "mixed_interest",
+  "party_setup": {
+    "solo_friendly": false,
+    "recommended_party_size": { "min": 3, "max": 4 },
+    "default_participants": {
+      "3": ["alice", "orion", "mina"],
+      "4": ["alice", "orion", "mina", "bram"]
+    },
+    "sample_pcs": ["alice", "orion", "mina", "bram"]
+  },
+  "opening_scene": "foyer",
+  "goals": [
+    {
+      "id": "secure-ledger",
+      "kind": "inventory_ever_contained",
+      "actor": "any_pc",
+      "item_id": "夜会台帳",
+      "outcome": "success"
+    },
+    {
+      "id": "expose-forgery",
+      "kind": "scene_flag",
+      "scene": "archive",
+      "flag": "forgery_exposed",
+      "equals": "true",
+      "outcome": "success"
+    },
+    {
+      "id": "avoid-riot",
+      "kind": "scene_flag",
+      "scene": "hearing",
+      "flag": "riot_avoided",
+      "equals": "true",
+      "outcome": "success"
+    }
+  ],
+  "scenes": {
+    "foyer": {
+      "description": "仮面の客が集う夜会場の前室。招待状の真偽、客同士の腹の探り合い、遺言の噂で空気は張り詰めている。",
+      "difficulty": {
+        "stat": "mind",
+        "target": 9,
+        "tags": ["parley", "deception", "crowd"]
+      },
+      "transitions": [
+        {
+          "to": "archive",
+          "label": "控え室と記録庫へ入る",
+          "requires": [
+            { "kind": "scene_progress_at_least", "scene": "foyer", "key": "cover", "value": 2 }
+          ]
+        }
+      ]
+    },
+    "archive": {
+      "description": "競売場の裏手にある記録庫。帳簿、封蝋、差し替えられた遺言書の断片が散らばり、真偽を見抜けば誰に利があるかも見えてくる。",
+      "difficulty": {
+        "stat": "tech",
+        "target": 9,
+        "tags": ["lockpick", "evidence", "observe"]
+      },
+      "transitions": [
+        {
+          "to": "hearing",
+          "label": "公開審問と最終競売へ向かう",
+          "requires": [
+            { "kind": "scene_flag", "scene": "archive", "flag": "forgery_exposed", "equals": "true" }
+          ]
+        }
+      ]
+    },
+    "hearing": {
+      "description": "高壇の上では競売人が木槌を構え、後見人たちが怒号を飲み込んでいる。ここで誰に正統性を与えるかが、街の勢力図を決める。",
+      "difficulty": {
+        "stat": "mind",
+        "target": 11,
+        "tags": ["bargain", "parley", "evidence"]
+      },
+      "transitions": []
+    }
+  },
+  "npcs": [
+    {
+      "name": "競売人 ヴァレル",
+      "kind": "npc",
+      "sheet": {
+        "name": "競売人 ヴァレル",
+        "class": "競売人",
+        "stats": { "body": 0, "tech": 1, "mind": 2 },
+        "hp_max": 7,
+        "traits": [
+          {
+            "id": "floor-control",
+            "name": "場の支配",
+            "desc": "公開審問や競売の流れを読む心判定で +1",
+            "effects": [
+              { "stat": "mind", "amount": 1, "tags": ["bargain", "crowd", "parley"], "trigger": "roll" }
+            ]
+          }
+        ],
+        "inventory": []
+      }
+    },
+    {
+      "name": "若後家 セラ",
+      "kind": "npc",
+      "sheet": {
+        "name": "若後家 セラ",
+        "class": "後見人",
+        "stats": { "body": 0, "tech": 0, "mind": 2 },
+        "hp_max": 6,
+        "traits": [
+          {
+            "id": "public-sympathy",
+            "name": "同情の的",
+            "desc": "涙と弁明で場を揺らす心判定で +1",
+            "effects": [
+              { "stat": "mind", "amount": 1, "tags": ["parley", "deception", "crowd"], "trigger": "roll" }
+            ]
+          }
+        ],
+        "inventory": []
+      }
+    },
+    {
+      "name": "組合代理 ハド",
+      "kind": "npc",
+      "sheet": {
+        "name": "組合代理 ハド",
+        "class": "代理人",
+        "stats": { "body": 1, "tech": 1, "mind": 1 },
+        "hp_max": 8,
+        "traits": [
+          {
+            "id": "hard-bargain",
+            "name": "強硬交渉",
+            "desc": "取引や圧力をかける心判定で +1",
+            "effects": [
+              { "stat": "mind", "amount": 1, "tags": ["bargain", "parley"], "trigger": "roll" }
+            ]
+          }
+        ],
+        "inventory": []
+      }
+    },
+    {
+      "name": "書記見習い ネロ",
+      "kind": "npc",
+      "sheet": {
+        "name": "書記見習い ネロ",
+        "class": "書記見習い",
+        "stats": { "body": 0, "tech": 2, "mind": 1 },
+        "hp_max": 6,
+        "traits": [
+          {
+            "id": "record-keeper",
+            "name": "記録癖",
+            "desc": "帳簿や封蝋を読む技判定で +1",
+            "effects": [
+              { "stat": "tech", "amount": 1, "tags": ["evidence", "lockpick", "observe"], "trigger": "roll" }
+            ]
+          }
+        ],
+        "inventory": [
+          {
+            "id": "夜会台帳",
+            "name": "夜会台帳",
+            "desc": "裏帳簿。誰が本物の遺言を差し替えたかを示す記録。",
+            "effects": [
+              { "stat": "mind", "amount": 1, "tags": ["evidence", "bargain", "parley"] }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

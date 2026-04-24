@@ -1,0 +1,42 @@
+{
+  "name": "mina",
+  "class": "弁士",
+  "stats": { "body": 0, "tech": 1, "mind": 2 },
+  "hp_max": 7,
+  "traits": [
+    {
+      "id": "silver-tongue",
+      "name": "話術",
+      "desc": "交渉、説得、取引の心判定で +1",
+      "effects": [
+        { "stat": "mind", "amount": 1, "tags": ["parley", "bargain", "deception"], "trigger": "roll" }
+      ]
+    },
+    {
+      "id": "read-room",
+      "name": "空気読み",
+      "desc": "人混みや場の空気から、有利な流れを掴む",
+      "effects": []
+    }
+  ],
+  "inventory": [
+    {
+      "id": "calling-cards",
+      "name": "名刺束",
+      "desc": "紹介や口利きに使う名刺束",
+      "effects": []
+    },
+    {
+      "id": "sealed-notebook",
+      "name": "封印付き手帳",
+      "desc": "貸し借りと弱みを控えた小さな手帳",
+      "effects": []
+    },
+    {
+      "id": "perfume-vial",
+      "name": "香油瓶",
+      "desc": "印象操作や気付けに使う香油",
+      "effects": []
+    }
+  ]
+}

@@ -78,10 +78,37 @@ fn current_scene_description(scenario : Json, key : String) -> String {
 }
 
 ///|
+fn scenario_interaction_mode(scenario : Json) -> String {
+  match json_string_field(scenario, "interaction_mode", "cooperative") {
+    "mixed_interest" => "mixed_interest"
+    _ => "cooperative"
+  }
+}
+
+///|
+fn format_interaction_mode(mode : String) -> String {
+  match mode {
+    "mixed_interest" => "mixed_interest (半協力 / 利害対立あり)"
+    _ => "cooperative (協力型)"
+  }
+}
+
+///|
 fn validate_scenario_json(
   scenario : Json,
   scenario_id : String,
 ) -> Unit raise TrpgFailure {
+  let interaction_mode = json_string_field(
+    scenario, "interaction_mode", "cooperative",
+  )
+  if interaction_mode != "cooperative" && interaction_mode != "mixed_interest" {
+    fail(
+      TrpgError::Usage(
+        "scenario has unsupported interaction_mode: \{scenario_id}",
+        Some("supported values: cooperative, mixed_interest"),
+      ),
+    )
+  }
   let opening = json_string_field(scenario, "opening_scene", "")
   if opening.is_empty() {
     fail(

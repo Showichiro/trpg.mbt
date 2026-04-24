@@ -51,6 +51,10 @@ trpg --describe >/tmp/trpg-describe.json
 trpg --help >/tmp/trpg-help.txt
 trpg scenario list >/tmp/trpg-scenario-list-before.json
 trpg scenario validate forgotten_library >/tmp/trpg-scenario-validate.json
+trpg scenario validate festival_bathhouse_fire >/tmp/trpg-scenario-validate-fire.json
+trpg scenario show festival_bathhouse_fire >/tmp/trpg-scenario-show-fire.json
+trpg scenario validate midnight_auction >/tmp/trpg-scenario-validate-auction.json
+trpg scenario show midnight_auction >/tmp/trpg-scenario-show-auction.json
 trpg scenario validate /tmp/trpg-public-demo.json >/tmp/trpg-scenario-validate-path.json
 trpg scenario import /tmp/trpg-public-demo.json >/tmp/trpg-scenario-import.json
 trpg scenario validate "http://127.0.0.1:${http_port}/remote_demo.json" >/tmp/trpg-scenario-validate-url.json
@@ -103,6 +107,19 @@ trpg scene flag sealed true >/tmp/trpg-flag.json
 trpg session goals >/tmp/trpg-session-goals-after.json
 trpg session report >/tmp/trpg-session-report.json
 trpg session end >/tmp/trpg-session-end.json
+trpg session init festival_bathhouse_fire >/tmp/trpg-session-fire.json
+trpg pc add alice --template alice >/tmp/trpg-pc-add-fire-alice.json
+trpg pc add orion --template orion >/tmp/trpg-pc-add-fire-orion.json
+trpg pc add bram --template bram >/tmp/trpg-pc-add-fire-bram.json
+trpg session show >/tmp/trpg-session-show-fire.json
+trpg session end >/tmp/trpg-session-end-fire.json
+trpg session init midnight_auction >/tmp/trpg-session-auction.json
+trpg pc add alice --template alice >/tmp/trpg-pc-add-auction-alice.json
+trpg pc add orion --template orion >/tmp/trpg-pc-add-auction-orion.json
+trpg pc add mina --template mina >/tmp/trpg-pc-add-auction-mina.json
+trpg pc add bram --template bram >/tmp/trpg-pc-add-auction-bram.json
+trpg session show >/tmp/trpg-session-show-auction.json
+trpg session end >/tmp/trpg-session-end-auction.json
 trpg scenario remove public_demo >/tmp/trpg-scenario-remove.json
 trpg scenario remove remote_demo >/tmp/trpg-scenario-remove-url.json
 
@@ -133,6 +150,36 @@ fi
 
 if ! grep -q '"scenario_id":"remote_demo"' /tmp/trpg-scenario-import-url.json; then
   echo "smoke: expected URL scenario import to install remote_demo" >&2
+  exit 1
+fi
+
+if ! grep -q '"id":"bram"' /tmp/trpg-pc-templates.json; then
+  echo "smoke: expected pc templates to include bram" >&2
+  exit 1
+fi
+
+if ! grep -q '"id":"mina"' /tmp/trpg-pc-templates.json; then
+  echo "smoke: expected pc templates to include mina" >&2
+  exit 1
+fi
+
+if ! grep -q '"scenario_id":"festival_bathhouse_fire"' /tmp/trpg-session-fire.json; then
+  echo "smoke: expected second session to use festival_bathhouse_fire" >&2
+  exit 1
+fi
+
+if ! grep -q '湯屋番 サザ' /tmp/trpg-session-show-fire.json; then
+  echo "smoke: expected festival scenario NPC to auto-register" >&2
+  exit 1
+fi
+
+if ! grep -q '"scenario_id":"midnight_auction"' /tmp/trpg-session-auction.json; then
+  echo "smoke: expected third session to use midnight_auction" >&2
+  exit 1
+fi
+
+if ! grep -q '書記見習い ネロ' /tmp/trpg-session-show-auction.json; then
+  echo "smoke: expected auction scenario NPC to auto-register" >&2
   exit 1
 fi
 

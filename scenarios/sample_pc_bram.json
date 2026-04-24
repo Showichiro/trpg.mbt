@@ -1,0 +1,42 @@
+{
+  "name": "bram",
+  "class": "運び屋",
+  "stats": { "body": 2, "tech": 1, "mind": 0 },
+  "hp_max": 9,
+  "traits": [
+    {
+      "id": "heavy-lifter",
+      "name": "怪力",
+      "desc": "救助や瓦礫どかし、水門操作の体判定で +1",
+      "effects": [
+        { "stat": "body", "amount": 1, "tags": ["rescue", "debris", "floodgate"], "trigger": "roll" }
+      ]
+    },
+    {
+      "id": "steady-feet",
+      "name": "踏ん張り",
+      "desc": "滑る床や悪い足場でも体勢を崩しにくい",
+      "effects": []
+    }
+  ],
+  "inventory": [
+    {
+      "id": "crowbar",
+      "name": "てこ棒",
+      "desc": "こじ開けや持ち上げに使う鉄の棒",
+      "effects": []
+    },
+    {
+      "id": "work-gloves",
+      "name": "作業手袋",
+      "desc": "熱や擦り傷から手を守る厚手の手袋",
+      "effects": []
+    },
+    {
+      "id": "canvas-sling",
+      "name": "荷締め布",
+      "desc": "荷物の固定や負傷者の搬送に使える丈夫な布",
+      "effects": []
+    }
+  ]
+}

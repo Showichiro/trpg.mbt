@@ -215,6 +215,7 @@ struct ScenarioInstallRow {
   version : String?
   path : String
   origin : String
+  interaction_mode : String
   source_url : String?
   installed_at_ms : Int64?
 }

@@ -13,6 +13,22 @@ test "validate scenario accepts structured difficulty transitions and goals" {
 }
 
 ///|
+test "scenario interaction mode defaults to cooperative and accepts mixed_interest" {
+  let cooperative = parse_json(
+    "{\"id\":\"demo\",\"opening_scene\":\"entrance\",\"scenes\":{\"entrance\":{\"description\":\"入口\",\"transitions\":[]}}}",
+    "scenario",
+  )
+  ignore(validate_scenario_json(cooperative, "demo"))
+  inspect(scenario_interaction_mode(cooperative), content="cooperative")
+  let mixed = parse_json(
+    "{\"id\":\"demo\",\"interaction_mode\":\"mixed_interest\",\"opening_scene\":\"entrance\",\"scenes\":{\"entrance\":{\"description\":\"入口\",\"transitions\":[]}}}",
+    "scenario",
+  )
+  ignore(validate_scenario_json(mixed, "demo"))
+  inspect(scenario_interaction_mode(mixed), content="mixed_interest")
+}
+
+///|
 test "derive session outcome follows success goal satisfaction" {
   inspect(
     derive_session_outcome([

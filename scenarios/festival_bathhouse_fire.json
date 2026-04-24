@@ -1,0 +1,118 @@
+{
+  "id": "festival_bathhouse_fire",
+  "title": "湯祭り通りの火事場",
+  "summary": "祭りで賑わう湯屋街が火を噴いた。群衆を避難させ、閉じ込められた湯屋番を救い、水門を開いて延焼を止める。",
+  "party_setup": {
+    "solo_friendly": false,
+    "recommended_party_size": { "min": 2, "max": 3 },
+    "default_participants": {
+      "2": ["alice", "bram"],
+      "3": ["alice", "orion", "bram"]
+    },
+    "sample_pcs": ["alice", "orion", "bram"]
+  },
+  "opening_scene": "street",
+  "goals": [
+    {
+      "id": "evacuate-crowd",
+      "kind": "scene_progress_at_least",
+      "scene": "street",
+      "key": "evacuated",
+      "value": 2,
+      "outcome": "success"
+    },
+    {
+      "id": "save-attendant",
+      "kind": "scene_flag",
+      "scene": "bathhouse",
+      "flag": "attendant_safe",
+      "equals": "true",
+      "outcome": "success"
+    },
+    {
+      "id": "open-sluice",
+      "kind": "scene_flag",
+      "scene": "sluice",
+      "flag": "channel_open",
+      "equals": "true",
+      "outcome": "success"
+    }
+  ],
+  "scenes": {
+    "street": {
+      "description": "祭囃子の残る湯祭り通り。屋台の布が燃え移り、湯気と煙の中で客たちが押し合いへし合いになっている。",
+      "difficulty": {
+        "stat": "body",
+        "target": 9,
+        "tags": ["rescue", "crowd", "smoke"]
+      },
+      "transitions": [
+        {
+          "to": "bathhouse",
+          "label": "湯屋の中へ踏み込む",
+          "requires": [
+            { "kind": "scene_progress_at_least", "scene": "street", "key": "evacuated", "value": 2 }
+          ]
+        }
+      ]
+    },
+    "bathhouse": {
+      "description": "蒸気が噴き上がる湯屋の内部。軋む梁の奥で湯屋番サザが配管に挟まれ、逃げ道を探している。",
+      "difficulty": {
+        "stat": "tech",
+        "target": 9,
+        "tags": ["machinery", "steam", "rescue"]
+      },
+      "transitions": [
+        {
+          "to": "sluice",
+          "label": "水門路へ走る",
+          "requires": [
+            { "kind": "scene_flag", "scene": "bathhouse", "flag": "attendant_safe", "equals": "true" }
+          ]
+        }
+      ]
+    },
+    "sluice": {
+      "description": "水路脇の大水門。石壁には古い操作手順が刻まれ、固着した歯車を力尽くと段取りで動かせば火勢を抑えられる。",
+      "difficulty": {
+        "stat": "body",
+        "target": 11,
+        "tags": ["floodgate", "teamwork", "ancient-text"]
+      },
+      "transitions": []
+    }
+  },
+  "npcs": [
+    {
+      "name": "湯屋番 サザ",
+      "kind": "npc",
+      "sheet": {
+        "name": "湯屋番 サザ",
+        "class": "湯屋番",
+        "stats": { "body": 1, "tech": 2, "mind": 1 },
+        "hp_max": 7,
+        "traits": [
+          {
+            "id": "pipe-lore",
+            "name": "配管知識",
+            "desc": "蒸気配管や水門手順に関わる技判定で +1",
+            "effects": [
+              { "stat": "tech", "amount": 1, "tags": ["machinery", "steam", "floodgate"], "trigger": "roll" }
+            ]
+          }
+        ],
+        "inventory": [
+          {
+            "id": "sluice-plaque",
+            "name": "水門札",
+            "desc": "古い水門の手順が刻まれた金属札",
+            "effects": [
+              { "stat": "mind", "amount": 1, "tags": ["floodgate", "ancient-text", "teamwork"] }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
