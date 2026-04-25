@@ -4,6 +4,15 @@ Coding Agent TRPG 用の PoC CLI です。Claude Code の Main agent を GM、su
 
 ## セットアップ
 
+公開版のインストールは Homebrew を想定しています。
+
+```bash
+brew tap Showichiro/tap
+brew install trpg
+```
+
+開発者向け bootstrap:
+
 ```bash
 moon check
 moon test
@@ -141,6 +150,23 @@ near miss や fumble の軽減裁定は、`trpg session note "HP 半減適用" -
 - `3`: リソース未検出
 - `4`: 権限エラー
 - `5`: コンフリクト
+
+## リリース運用
+
+CI は `.github/workflows/ci.yml`、tag release は `.github/workflows/release.yml` にあります。release workflow は次を行います。
+
+- `vX.Y.Z` tag の version metadata を検証
+- Linux x64 / macOS arm64 の release binary を作成して GitHub Releases に upload
+
+Homebrew Formula の更新は source repo からは行わず、`Showichiro/homebrew-tap` 側の scheduled workflow が最新 release を定期取得して `Formula/trpg.rb` を更新します。`apispec` と同じ運用です。
+
+リリース準備は次で行います。
+
+```bash
+bash scripts/prepare-release.sh v0.1.1
+```
+
+この script は `cmd/main/main.mbt` と `moon.mod.json` の version を揃え、`moon info --target native`, `moon fmt`, `moon check --target native`, `moon test cmd/main --target native` を流します。tag 前の整合性確認だけ行いたいときは `bash scripts/verify-version.sh v0.1.1` を使ってください。
 
 ## 検証
 

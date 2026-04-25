@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Show MoonBit version
+        run: moon version --all
+
+      - name: Update MoonBit registry
+        run: moon update
+
+      - name: Verify release version metadata
+        run: scripts/verify-version.sh
+
+      - name: Verify generated files and formatting
+        run: |
+          moon info --target native
+          moon fmt
+          git diff --exit-code
+
+      - name: Check and test
+        run: |
+          moon check --target native
+          moon test cmd/main --target native
+
+      - name: Build release binary
+        run: |
+          moon build cmd/main --target native --release --strip
+          bin_path="_build/native/release/build/cmd/main/main.exe"
+          if [ ! -x "$bin_path" ]; then
+            bin_path="_build/native/release/build/cmd/main/main"
+          fi
+          cp "$bin_path" ./trpg
+          chmod +x ./trpg
+          test "$(./trpg version --human)" = "$(python3 -c 'import json; print(json.load(open("moon.mod.json"))["version"])')"
+
+      - name: CLI smoke test
+        run: |
+          PATH="$PWD:$PATH" bash scripts/smoke.sh

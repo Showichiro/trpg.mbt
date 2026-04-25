@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  verify-version:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      release_version: ${{ steps.version.outputs.release_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify release version metadata
+        id: version
+        run: |
+          scripts/verify-version.sh "$GITHUB_REF_NAME"
+          release_version="${GITHUB_REF_NAME#v}"
+          {
+            printf 'release_tag=%s\n' "$GITHUB_REF_NAME"
+            printf 'release_version=%s\n' "$release_version"
+          } >> "$GITHUB_OUTPUT"
+
+  create-release:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify-version.outputs.release_tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh release view "$VERSION" --repo "$REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$VERSION" --repo "$REPOSITORY" --title "$VERSION" --notes "trpg $VERSION"
+
+  build:
+    needs:
+      - verify-version
+      - create-release
+    runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_TAG: ${{ needs.verify-version.outputs.release_tag }}
+      RELEASE_VERSION: ${{ needs.verify-version.outputs.release_version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: linux
+            arch: x64
+          - runner: macos-14
+            os: macos
+            arch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Update MoonBit registry
+        run: moon update
+
+      - name: Build binary
+        run: |
+          moon build cmd/main --target native --release --strip
+          mkdir -p dist
+          asset="trpg-${RELEASE_TAG}-${{ matrix.os }}-${{ matrix.arch }}"
+          bin_path="_build/native/release/build/cmd/main/main.exe"
+          if [ ! -x "$bin_path" ]; then
+            bin_path="_build/native/release/build/cmd/main/main"
+          fi
+          cp "$bin_path" "dist/${asset}"
+          chmod +x "dist/${asset}"
+          actual_version="$("dist/${asset}" version --human)"
+          if [ "$actual_version" != "$RELEASE_VERSION" ]; then
+            echo "built binary version is ${actual_version}, expected ${RELEASE_VERSION}" >&2
+            exit 1
+          fi
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify-version.outputs.release_tag }}
+        run: |
+          gh release upload "$VERSION" dist/* --clobber
